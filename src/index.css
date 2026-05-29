@@ -1,0 +1,182 @@
+body {
+  margin: 0;
+  padding: 0;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background-color: #040b16; 
+  color: #ffffff;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  transition: background-color 0.3s, color 0.3s;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+/* --- CARD HOVER EFFECT --- */
+.feature-card {
+  background-color: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  padding: 30px 25px;
+  margin: 0; 
+  width: 100%;
+  position: relative;
+  z-index: 10;
+  transition: all 0.3s ease;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.feature-card:hover {
+  border-color: #3498db;
+  box-shadow: 0 10px 30px rgba(52, 152, 219, 0.15);
+  transform: translateY(-5px);
+}
+
+.feature-card h3 {
+  margin-top: 0;
+  color: #ffffff;
+  font-size: 1.4rem;
+  margin-bottom: 15px;
+}
+
+.feature-card p {
+  color: #b2bec3;
+  line-height: 1.6;
+  margin: 0;
+}
+
+/* Dropdown Menu CSS */
+.dropdown {
+  position: relative;
+  display: inline-block;
+}
+
+.dropdown-content {
+  display: none;
+  position: absolute;
+  background-color: #0d1630;
+  min-width: 200px;
+  box-shadow: 0px 8px 24px rgba(0,0,0,0.5);
+  z-index: 100;
+  border-radius: 8px;
+  top: 100%;
+  left: 0;
+  margin-top: 5px;
+  overflow: hidden;
+  border: 1px solid rgba(255,255,255,0.1);
+}
+
+.dropdown:hover .dropdown-content {
+  display: block;
+}
+
+.dropdown-content a {
+  color: #b2bec3;
+  padding: 14px 16px;
+  text-decoration: none;
+  display: block;
+  border-bottom: 1px solid rgba(255,255,255,0.05);
+  transition: 0.2s;
+}
+
+.dropdown-content a:last-child {
+  border-bottom: none;
+}
+
+.dropdown-content a:hover {
+  background-color: #3498db;
+  color: white;
+}
+
+/* --- ACCESSIBILITY CLASSES --- */
+body.high-contrast {
+  background-color: #000000 !important;
+  color: #ffff00 !important;
+}
+
+body.high-contrast * {
+  border-color: #ffff00 !important;
+}
+
+body.high-contrast .dropdown-content {
+  background-color: #000000 !important;
+}
+
+body.legible-font * {
+  font-family: Arial, Helvetica, sans-serif !important;
+  letter-spacing: 1px !important;
+}
+
+body.highlight-links a {
+  background-color: #ffeb3b !important;
+  color: #000000 !important;
+  font-weight: bold !important;
+  text-decoration: underline !important;
+  padding: 2px 5px !important;
+  border-radius: 4px;
+}
+
+body.text-spacing * {
+  letter-spacing: 0.15em !important;
+  line-height: 1.7 !important;
+  word-spacing: 0.25em !important;
+}
+
+/* --- MOBILE RESPONSIVENESS & MENU FIX --- */
+.desktop-only { display: flex; }
+.mobile-only { display: none; }
+
+@media (max-width: 1000px) {
+  .desktop-only { display: none !important; }
+  .mobile-only { display: block !important; }
+
+  /* Forces mobile menu elements to stack vertically */
+  .mobile-only > div {
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
+    gap: 15px !important;
+    width: 100%;
+    padding: 20px 0;
+  }
+
+  /* Styling for the opened mobile menu container */
+  .mobile-menu-open {
+    display: flex !important;
+    flex-direction: column !important;
+    background-color: #0d1630 !important;
+    position: absolute;
+    top: 70px; /* Adjusts based on your header height */
+    left: 0;
+    width: 100%;
+    padding: 20px !important;
+    z-index: 1000;
+    border-bottom: 2px solid #3498db;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.8);
+  }
+
+  /* Makes mobile links easier to tap */
+  .mobile-only a, 
+  .mobile-menu-open a {
+    display: block;
+    width: 100%;
+    text-align: center;
+    padding: 12px 0;
+    font-size: 1.2rem;
+    color: #ffffff;
+    text-decoration: none;
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+  }
+
+  /* Ensures buttons stretch to look good on mobile */
+  .mobile-only button,
+  .mobile-menu-open button {
+    width: 80% !important;
+    margin: 10px auto 0 auto !important;
+    display: block;
+  }
+}
