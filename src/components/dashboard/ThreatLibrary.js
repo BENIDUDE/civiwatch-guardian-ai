@@ -22,6 +22,10 @@ const SVGIcons = {
   History: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
 };
 
+// --- STATIC CONSTANTS ---
+// Placed outside the component to prevent recreation on re-renders and fix useCallback dependencies.
+const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 const ThreatLibrary = ({ userProfile, isEn, triggerToast }) => {
   const isRtl = !isEn;
   const isAdmin = ['ngo admin', 'moderator l2', 'global admin', 'super admin', 'admin'].includes(userProfile?.role?.toLowerCase()?.trim());
@@ -39,8 +43,6 @@ const ThreatLibrary = ({ userProfile, isEn, triggerToast }) => {
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [activePreset, setActivePreset] = useState(null);
-
-  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
   const toggleLog = (id) => {
     setExpandedLogs(prev => ({ ...prev, [id]: !prev[id] }));
@@ -155,19 +157,19 @@ const ThreatLibrary = ({ userProfile, isEn, triggerToast }) => {
       setEndDate(today.toISOString().split('T')[0]);
       setStatusFilter('Verified');
       setPlatformFilter('all');
-      setSearchQuery('');
+      searchQuery && setSearchQuery('');
     } else if (preset === 'pendingReview') {
       setStatusFilter('Pending Review');
       setStartDate('');
       setEndDate('');
       setPlatformFilter('all');
-      setSearchQuery('');
+      searchQuery && setSearchQuery('');
     } else if (preset === 'myRejections') {
       setStatusFilter('Changes Requested');
       setStartDate('');
       setEndDate('');
       setPlatformFilter('all');
-      setSearchQuery('');
+      searchQuery && setSearchQuery('');
     }
     
     setTimeout(() => handleSearch(), 100);

@@ -21,9 +21,8 @@ const CouncilSimulatorDoc = ({ isEn = true }) => {
   const [waterfallNodes, setWaterfallNodes] = useState([
     { name: 'GitHub Models (GPT-4o-mini)', online: true },
     { name: 'Groq Llama 3 Vision', online: true },
-    { name: 'Google Gemini 1.5 Flash', online: true },
     { name: 'OpenRouter Llama 3 Vision', online: true },
-    { name: 'Hugging Face (Llama 3 Vision)', online: true }
+    { name: 'Google Gemini 1.5 Flash', online: true }
   ]);
   const [waterfallResult, setWaterfallResult] = useState(null);
   const [isSimulatingWaterfall, setIsSimulatingWaterfall] = useState(false);
@@ -37,9 +36,8 @@ const CouncilSimulatorDoc = ({ isEn = true }) => {
   const providers = [
     'GitHub Models (GPT-4o-mini)', 
     'Groq Llama 3 Vision', 
-    'Google Gemini 1.5 Flash', 
     'OpenRouter Llama 3 Vision', 
-    'Hugging Face (Llama 3 Vision)'
+    'Google Gemini 1.5 Flash'
   ];
 
   const categories = {
@@ -94,7 +92,7 @@ const CouncilSimulatorDoc = ({ isEn = true }) => {
     setResults(null);
 
     setTimeout(() => {
-      const numFails = (failureRate / 100) * 5;
+      const numFails = (failureRate / 100) * 4;
       const shuffled = [...providers].sort(() => 0.5 - Math.random());
       const failedProviders = shuffled.slice(0, numFails);
       const successfulProviders = shuffled.slice(numFails);
@@ -170,7 +168,6 @@ const CouncilSimulatorDoc = ({ isEn = true }) => {
   const tableStyle = { width: '100%', borderCollapse: 'collapse', marginBottom: '30px', fontSize: '14px', backgroundColor: '#020617', borderRadius: '8px', overflow: 'hidden', border: '1px solid #334155' };
   const thStyle = { textAlign: 'left', padding: '15px', backgroundColor: 'rgba(56, 189, 248, 0.1)', color: '#38bdf8', borderBottom: '1px solid #334155', fontWeight: 'bold' };
   const tdStyle = { padding: '15px', borderBottom: '1px solid #1e293b', color: '#cbd5e1', verticalAlign: 'top' };
-  const preStyle = { backgroundColor: '#020617', padding: '20px', borderRadius: '8px', border: '1px solid #334155', overflowX: 'auto', color: '#38bdf8', fontFamily: 'monospace', fontSize: '13px', lineHeight: '1.6', marginBottom: '30px', whiteSpace: 'pre-wrap' };
   const h2Style = { color: '#38bdf8', fontSize: '22px', borderBottom: '1px solid #334155', paddingBottom: '10px', marginTop: '40px', marginBottom: '20px', scrollMarginTop: '180px' };
   const h3Style = { color: '#f8fafc', fontSize: '18px', marginTop: '30px', marginBottom: '15px' };
 
@@ -283,7 +280,7 @@ const CouncilSimulatorDoc = ({ isEn = true }) => {
         <div style={{ backgroundColor: 'rgba(30,41,59,0.5)', padding: '20px', borderRadius: '12px', marginBottom: '30px', border: '1px solid #334155' }}>
           <h3 style={{ color: '#a855f7', margin: '0 0 10px 0', fontSize: '18px' }}>Simulation B: High-Integrity Council Voting</h3>
           <p style={{ color: '#cbd5e1', margin: '0 0 20px 0', lineHeight: '1.6', fontSize: '14px' }}>
-            {isEn ? 'When automatically verifying severe threats, we query 5 external APIs simultaneously. If models time out, the math dynamically adjusts based ONLY on the surviving models. Use the slider below to force random API failures and observe how the consensus adapts.' : 'מכיוון שאנו מתשאלים 5 ממשקי API חיצוניים במקביל, עלינו להיערך לקריסות. אם מודלים נכשלים, המתמטיקה מתאימה את עצמה דינמית על בסיס המודלים ששרדו בלבד.'}
+            {isEn ? 'When automatically verifying severe threats, we query 4 external APIs simultaneously. If models time out, the math dynamically adjusts based ONLY on the surviving models. Use the slider below to force random API failures and observe how the consensus adapts.' : 'מכיוון שאנו מתשאלים 4 ממשקי API חיצוניים במקביל, עלינו להיערך לקריסות. אם מודלים נכשלים, המתמטיקה מתאימה את עצמה דינמית על בסיס המודלים ששרדו בלבד.'}
           </p>
 
           <div style={{ display: 'flex', gap: '20px', marginBottom: '30px', flexWrap: 'wrap', backgroundColor: '#1e293b', padding: '20px', borderRadius: '12px', border: '1px solid #334155' }}>
@@ -297,10 +294,10 @@ const CouncilSimulatorDoc = ({ isEn = true }) => {
             <div style={{ flex: 1, minWidth: '200px' }}>
               <label style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', fontSize: '14px', color: '#94a3b8', fontWeight: 'bold' }}>
                 <span>API Failure Rate</span>
-                <span style={{ color: failureRate > 50 ? '#ef4444' : '#38bdf8' }}>{failureRate}% ({failureRate/20} models offline)</span>
+                <span style={{ color: failureRate > 50 ? '#ef4444' : '#38bdf8' }}>{failureRate}% ({failureRate/25} models offline)</span>
               </label>
               <input 
-                type="range" min="0" max="80" step="20" 
+                type="range" min="0" max="75" step="25" 
                 value={failureRate} onChange={(e) => setFailureRate(Number(e.target.value))}
                 style={{ width: '100%', accentColor: '#38bdf8', cursor: 'pointer' }}
               />
@@ -424,7 +421,7 @@ const CouncilSimulatorDoc = ({ isEn = true }) => {
             <tr><td style={{...tdStyle, color: '#fff', fontWeight: 'bold'}}>Execution Strategy</td><td style={tdStyle}>Sequential (One after another)</td><td style={tdStyle}>Parallel (All at once)</td></tr>
             <tr><td style={{...tdStyle, color: '#fff', fontWeight: 'bold'}}>Termination Condition</td><td style={tdStyle}>Stops at first successful response</td><td style={tdStyle}>Waits for all responses or timeouts</td></tr>
             <tr><td style={{...tdStyle, color: '#fff', fontWeight: 'bold'}}>Primary Goal</td><td style={tdStyle}>Minimize UI wait time</td><td style={tdStyle}>Maximize moderation accuracy</td></tr>
-            <tr><td style={{...tdStyle, color: '#fff', fontWeight: 'bold'}}>Failure Tolerance</td><td style={tdStyle}>High (4 backups available)</td><td style={tdStyle}>High (Calculates via remaining active nodes)</td></tr>
+            <tr><td style={{...tdStyle, color: '#fff', fontWeight: 'bold'}}>Failure Tolerance</td><td style={tdStyle}>High (3 backups available)</td><td style={tdStyle}>High (Calculates via remaining active nodes)</td></tr>
           </tbody>
         </table>
 
