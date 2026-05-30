@@ -1,18 +1,20 @@
 /**
  * @file TeamManager.js
  * @description Team Member Management & QA Configuration.
- * FIX: Fully integrated the rich UI (Badges, Settings, Elevation) with the secure 
- * Supabase Edge Function logic for sending email invitations.
+ * Fully integrated the rich UI (Badges, Settings, Elevation) with secure 
+ * Supabase Edge Functions for invites and Vercel Serverless Functions for CSV Bulk Actions.
  */
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../../supabaseClient';
+import Papa from 'papaparse';
 
 const SVGIcons = {
   UserPlus: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="8.5" cy="7" r="4"></circle><line x1="20" y1="8" x2="20" y2="14"></line><line x1="23" y1="11" x2="17" y2="11"></line></svg>,
   Settings: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>,
   AlertTriangle: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>,
   Mail: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path><polyline points="22,6 12,13 2,6"></polyline></svg>,
-  ArrowUpCircle: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="16 12 12 8 8 12"></polyline><line x1="12" y1="16" x2="12" y2="8"></line></svg>
+  ArrowUpCircle: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="16 12 12 8 8 12"></polyline><line x1="12" y1="16" x2="12" y2="8"></line></svg>,
+  Database: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"></ellipse><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"></path><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"></path></svg>
 };
 
 const TeamManager = ({ teamMembers, currentUserProfile, isEn, triggerToast, refreshData }) => {
@@ -39,12 +41,19 @@ const TeamManager = ({ teamMembers, currentUserProfile, isEn, triggerToast, refr
   const [targetRole, setTargetRole] = useState('');
   const [isElevating, setIsElevating] = useState(false);
 
+  // Bulk Upload State
+  const [showBulkActions, setShowBulkActions] = useState(false);
+  const [isBulkLoading, setIsBulkLoading] = useState(false);
+  const [bulkLogs, setBulkLogs] = useState(null);
+  const fileInputAddRef = useRef(null);
+  const fileInputRemoveRef = useRef(null);
+
   const getRoleLevel = (roleStr) => {
     const role = (roleStr || '').toLowerCase().trim();
     if (['global admin', 'super admin', 'system admin'].includes(role)) return 5;
     if (['admin', 'ngo admin'].includes(role)) return 3;
     if (['moderator l2'].includes(role)) return 2;
-    if (['operator l1'].includes(role)) return 1;
+    if (['operator l1', 'operator'].includes(role)) return 1;
     return 0;
   };
 
@@ -157,23 +166,19 @@ const TeamManager = ({ teamMembers, currentUserProfile, isEn, triggerToast, refr
   };
 
   const handleRemoveMember = async (memberId) => {
-    // 1. Safety Check Confirmation
     if (!window.confirm(isEn ? "Are you sure you want to release this operator back to the unassigned pool?" : "האם אתה בטוח שברצונך לשחרר מפעיל זה חזרה למאגר הפנוי?")) return;
     
     try {
       const member = localTeam.find(m => m.id === memberId);
       
-      // 2. Disconnect Manager
       const { error } = await supabase.from('user_profiles').update({ manager_id: null }).eq('id', memberId);
       if (error) throw error;
       
-      // 3. Evacuate Queues (Unassign active tasks)
       if (member?.user_id) {
         await supabase.from('reports').update({ assigned_to: null, status: 'Pending' }).eq('assigned_to', member.user_id).in('status', ['Pending', 'In Progress']);
         await supabase.from('assignments').update({ assigned_to: null, status: 'Pending' }).eq('assigned_to', member.user_id).in('status', ['Pending', 'In Progress']);
       }
       
-      // 4. UI Refresh
       triggerToast(isEn ? "Operator released to available pool." : "המפעיל שוחרר למאגר הפנוי.", 'success');
       if (refreshData) refreshData(); 
     } catch (err) {
@@ -181,6 +186,72 @@ const TeamManager = ({ teamMembers, currentUserProfile, isEn, triggerToast, refr
       triggerToast(isEn ? "Failed to release operator." : "שחרור המפעיל נכשל.", 'error');
     }
   };
+
+  // --- BULK OPERATIONS ---
+  
+  const executeBulkAdminAction = async (action, usersArray) => {
+    setIsBulkLoading(true);
+    setBulkLogs(null);
+    try {
+      const response = await fetch('/api/manage-users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: action,
+          users: usersArray,
+          requestingUserRole: currentUserProfile.role,
+        })
+      });
+
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Server request failed');
+      
+      setBulkLogs(data);
+      triggerToast(isEn ? `Processed ${usersArray.length} records.` : `עובדו ${usersArray.length} רשומות.`, data.failed.length > 0 ? 'error' : 'success');
+      if (refreshData) refreshData();
+    } catch (err) {
+      console.error(err);
+      triggerToast(err.message, 'error');
+    } finally {
+      setIsBulkLoading(false);
+    }
+  };
+
+  const handleFileUpload = (e, actionType) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    Papa.parse(file, {
+      header: true,
+      skipEmptyLines: true,
+      complete: (results) => {
+        const parsedUsers = results.data.map(row => ({
+          email: row.email?.trim(),
+          displayName: row.displayName?.trim(),
+          role: row.role?.trim() || 'operator',
+          password: row.password?.trim(),
+          organizationId: currentUserProfile.organization_id
+        })).filter(u => u.email); 
+
+        if (parsedUsers.length === 0) {
+          triggerToast(isEn ? 'No valid emails found in CSV.' : 'לא נמצאו כתובות דוא"ל תקינות בקובץ.', 'error');
+          return;
+        }
+
+        if (window.confirm(isEn ? `Are you sure you want to ${actionType} ${parsedUsers.length} users?` : `האם אתה בטוח שברצונך ל${actionType === 'add' ? 'הוסיף' : 'הסיר'} ${parsedUsers.length} משתמשים?`)) {
+          executeBulkAdminAction(actionType, parsedUsers);
+        }
+        
+        if (fileInputAddRef.current) fileInputAddRef.current.value = ''; 
+        if (fileInputRemoveRef.current) fileInputRemoveRef.current.value = ''; 
+      },
+      error: (error) => {
+        triggerToast(`CSV Error: ${error.message}`, 'error');
+      }
+    });
+  };
+
+  // --- MODALS ---
 
   const handleOpenElevation = (member) => {
     const nextRole = getNextRole(member.role);
@@ -294,21 +365,28 @@ const TeamManager = ({ teamMembers, currentUserProfile, isEn, triggerToast, refr
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '15px' }}>
         <div>
           <h3 style={{ margin: 0, color: '#fff', fontSize: '1.5rem' }}>{isEn ? 'Team Roster & Roles' : 'מצבת צוות והרשאות'}</h3>
-          <p style={{ margin: '5px 0 0 0', color: '#94a3b8', fontSize: '0.9rem' }}>{isEn ? 'Invite operators to your organization.' : 'הזמן מפעילים לארגון שלך.'}</p>
+          <p style={{ margin: '5px 0 0 0', color: '#94a3b8', fontSize: '0.9rem' }}>{isEn ? 'Manage operators and roles within your organization.' : 'נהל מפעילים והרשאות בארגון שלך.'}</p>
         </div>
         <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
           {isOrgAdmin && (
-            <button onClick={() => { setIsInviting(!isInviting); setIsAddingFromPool(false); }} style={{ backgroundColor: 'transparent', color: '#38bdf8', border: '1px solid #38bdf8', padding: '10px 20px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}>
-              {isInviting ? (isEn ? 'Cancel Invite' : 'ביטול') : <>{SVGIcons.Mail} {isEn ? 'Invite by Email' : 'הזמן במייל'}</>}
-            </button>
+            <>
+              <button onClick={() => { setShowBulkActions(!showBulkActions); setIsInviting(false); setIsAddingFromPool(false); }} style={{ backgroundColor: showBulkActions ? 'rgba(168, 85, 247, 0.2)' : 'transparent', color: '#a855f7', border: '1px solid #a855f7', padding: '10px 20px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', transition: 'all 0.2s' }}>
+                {SVGIcons.Database} {isEn ? 'Bulk Actions' : 'פעולות גורפות'}
+              </button>
+              <button onClick={() => { setIsInviting(!isInviting); setIsAddingFromPool(false); setShowBulkActions(false); }} style={{ backgroundColor: 'transparent', color: '#38bdf8', border: '1px solid #38bdf8', padding: '10px 20px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                {isInviting ? (isEn ? 'Cancel Invite' : 'ביטול') : <>{SVGIcons.Mail} {isEn ? 'Invite by Email' : 'הזמן במייל'}</>}
+              </button>
+            </>
           )}
-          <button onClick={() => { setIsAddingFromPool(!isAddingFromPool); setIsInviting(false); }} style={{ backgroundColor: '#38bdf8', color: '#0f172a', border: 'none', padding: '10px 20px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <button onClick={() => { setIsAddingFromPool(!isAddingFromPool); setIsInviting(false); setShowBulkActions(false); }} style={{ backgroundColor: '#38bdf8', color: '#0f172a', border: 'none', padding: '10px 20px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}>
             {isAddingFromPool ? (isEn ? 'Cancel Assign' : 'ביטול') : <>{SVGIcons.UserPlus} {isEn ? 'Assign Operator' : 'שייך מפעיל'}</>}
           </button>
         </div>
       </div>
 
-      {/* Invite Form */}
+      {/* Forms Area */}
+      
+      {/* 1. Invite Form */}
       {isOrgAdmin && isInviting && (
         <form onSubmit={handleSupabaseInvite} style={{ backgroundColor: 'rgba(56, 189, 248, 0.05)', padding: '20px', borderRadius: '12px', border: '1px solid rgba(56, 189, 248, 0.3)', display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
           <input 
@@ -325,7 +403,7 @@ const TeamManager = ({ teamMembers, currentUserProfile, isEn, triggerToast, refr
         </form>
       )}
 
-      {/* Existing Pool Form */}
+      {/* 2. Existing Pool Form */}
       {isAddingFromPool && (
         <form onSubmit={handleAddFromPool} style={{ backgroundColor: 'rgba(30, 41, 59, 0.5)', padding: '20px', borderRadius: '12px', border: '1px solid rgba(56, 189, 248, 0.3)', display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
           <select value={selectedPoolUserId} onChange={(e) => setSelectedPoolUserId(e.target.value)} style={{ flex: 1, minWidth: '250px', padding: '10px 15px', backgroundColor: '#0f172a', border: '1px solid #334155', borderRadius: '8px', color: '#fff', outline: 'none' }}>
@@ -336,6 +414,50 @@ const TeamManager = ({ teamMembers, currentUserProfile, isEn, triggerToast, refr
             {isEn ? 'Claim for My Team' : 'שייך לצוות שלי'}
           </button>
         </form>
+      )}
+
+      {/* 3. Bulk Upload Panel */}
+      {isOrgAdmin && showBulkActions && (
+        <div style={{ backgroundColor: 'rgba(168, 85, 247, 0.05)', padding: '25px', borderRadius: '12px', border: '1px solid rgba(168, 85, 247, 0.3)', animation: 'fadeIn 0.3s' }}>
+          <h4 style={{ color: '#a855f7', marginTop: 0, marginBottom: '15px' }}>{isEn ? 'CSV Bulk Operations' : 'פעולות גורפות באמצעות CSV'}</h4>
+          <p style={{ color: '#94a3b8', fontSize: '0.9rem', marginBottom: '20px' }}>
+            {isEn ? 'Upload a CSV file containing headers for email, displayName, role, and password.' : 'העלה קובץ CSV הכולל עמודות עבור דוא״ל, שם, תפקיד וסיסמה.'}
+          </p>
+          <div style={{ display: 'flex', gap: '15px', flexWrap: 'wrap' }}>
+            <input type="file" accept=".csv" ref={fileInputAddRef} style={{ display: 'none' }} onChange={(e) => handleFileUpload(e, 'add')} id="csvAddUpload" />
+            <label htmlFor="csvAddUpload" style={{ padding: '10px 20px', borderRadius: '8px', fontWeight: 'bold', backgroundColor: '#3b82f6', color: '#fff', cursor: isBulkLoading ? 'wait' : 'pointer', opacity: isBulkLoading ? 0.5 : 1 }}>
+              {isEn ? '📥 Bulk Add Users' : '📥 הוספה גורפת'}
+            </label>
+
+            <input type="file" accept=".csv" ref={fileInputRemoveRef} style={{ display: 'none' }} onChange={(e) => handleFileUpload(e, 'remove')} id="csvRemoveUpload" />
+            <label htmlFor="csvRemoveUpload" style={{ padding: '10px 20px', borderRadius: '8px', fontWeight: 'bold', backgroundColor: 'transparent', border: '1px solid #ef4444', color: '#ef4444', cursor: isBulkLoading ? 'wait' : 'pointer', opacity: isBulkLoading ? 0.5 : 1 }}>
+              {isEn ? '🗑️ Bulk Remove Users' : '🗑️ הסרה גורפת'}
+            </label>
+          </div>
+          
+          {/* Bulk Logs Render */}
+          {bulkLogs && (
+            <div style={{ marginTop: '20px', backgroundColor: '#020617', padding: '15px', borderRadius: '8px', border: '1px solid #1e293b' }}>
+              <h5 style={{ color: '#fff', margin: '0 0 10px 0' }}>{isEn ? 'Execution Logs' : 'יומן ביצוע'}</h5>
+              {bulkLogs.successful.length > 0 && (
+                <div style={{ color: '#10b981', fontSize: '0.85rem', marginBottom: '10px' }}>
+                  <strong>{bulkLogs.successful.length} {isEn ? 'Successful:' : 'הצלחות:'}</strong>
+                  <ul style={{ margin: '5px 0', paddingLeft: isEn ? '20px' : 0, paddingRight: isEn ? 0 : '20px' }}>
+                    {bulkLogs.successful.map((log, idx) => <li key={idx}>{log.email} - {log.status}</li>)}
+                  </ul>
+                </div>
+              )}
+              {bulkLogs.failed.length > 0 && (
+                <div style={{ color: '#ef4444', fontSize: '0.85rem' }}>
+                  <strong>{bulkLogs.failed.length} {isEn ? 'Failed:' : 'נכשלו:'}</strong>
+                  <ul style={{ margin: '5px 0', paddingLeft: isEn ? '20px' : 0, paddingRight: isEn ? 0 : '20px' }}>
+                    {bulkLogs.failed.map((log, idx) => <li key={idx}>{log.email} - {log.error}</li>)}
+                  </ul>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
       )}
 
       {/* Roster Table */}
@@ -426,7 +548,7 @@ const TeamManager = ({ teamMembers, currentUserProfile, isEn, triggerToast, refr
               </ul>
               <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
                 <button onClick={() => setShowElevationModal(false)} style={{ padding: '10px 20px', backgroundColor: 'transparent', color: '#94a3b8', border: '1px solid #334155', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' }}>{isEn ? 'Cancel' : 'ביטול'}</button>
-                <button onClick={executeRoleElevation} disabled={isElevating} style={{ backgroundColor: '#eab308', color: '#0f172a', border: 'none', padding: '10px 20px', borderRadius: '8px', cursor: isElevating ? 'wait' : 'pointer', fontWeight: 'bold' }}>
+                <button onClick={executeRoleElevation} disabled={isElevating} style={{ backgroundColor: '#eab308', color: '#0f172a', border: 'none', padding: '10px 20px', borderRadius: '8px', cursor: isElevating ? 'wait' : 'fontWeight' }}>
                   {isElevating ? (isEn ? 'Elevating...' : 'מבצע קידום...') : (isEn ? 'Confirm Elevation' : 'אשר קידום')}
                 </button>
               </div>
