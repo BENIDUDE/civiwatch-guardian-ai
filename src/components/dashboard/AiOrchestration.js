@@ -7,7 +7,7 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../../supabaseClient';
 import { useNavigate } from 'react-router-dom';
 
-const SVGIcons = {
+const Icons = {
   Cpu: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="4" y="4" width="16" height="16" rx="2" ry="2"></rect><rect x="9" y="9" width="6" height="6"></rect><line x1="9" y1="1" x2="9" y2="4"></line><line x1="15" y1="1" x2="15" y2="4"></line><line x1="9" y1="20" x2="9" y2="23"></line><line x1="15" y1="20" x2="15" y2="23"></line><line x1="20" y1="9" x2="23" y2="9"></line><line x1="20" y1="14" x2="23" y2="14"></line><line x1="1" y1="9" x2="4" y2="9"></line><line x1="1" y1="14" x2="4" y2="14"></line></svg>,
   ArrowLeft: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
 };
@@ -20,13 +20,16 @@ const DEFAULT_AI_SETTINGS = {
     gemini_15_flash: true
   },
   thresholds: {
-    'Terrorism': 95,
-    'Incitement': 90,
     'Antisemitism': 80,
-    'Disinformation': 75,
     'Hate Speech': 70,
     'Harassment': 70,
-    'Other Task': 70,
+    'Terrorism': 95,
+    'Violence / Cruelty': 90,
+    'Pornography': 85,
+    'Nudity': 85,
+    'Fake News': 75,
+    'Troll': 70,
+    'Other': 70,
     'Default': 70
   }
 };
@@ -40,40 +43,65 @@ const MODEL_DISPLAY_NAMES = {
 
 const AiOrchestration = ({ currentUserProfile, isEn = true, triggerToast }) => {
   const navigate = useNavigate();
+  const isRtl = !isEn;
   const [aiSettings, setAiSettings] = useState(DEFAULT_AI_SETTINGS);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [activeOrgId, setActiveOrgId] = useState(null);
 
+  // Self-Authenticating Fetch: Grabs profile from session if prop is missing
   useEffect(() => {
-    const fetchAiSettings = async () => {
-      if (!currentUserProfile?.organization_id) {
-        setIsLoading(false);
-        return;
-      }
+    const initializeCommandCenter = async () => {
+      let orgId = currentUserProfile?.organization_id;
+
       try {
-        const { data, error } = await supabase
+        // If App.js didn't pass the profile, fetch it securely from Supabase
+        if (!orgId) {
+          const { data: { session } } = await supabase.auth.getSession();
+          if (!session) {
+            navigate('/login');
+            return;
+          }
+          const { data: profile } = await supabase
+            .from('user_profiles')
+            .select('organization_id')
+            .eq('user_id', session.user.id)
+            .single();
+            
+          orgId = profile?.organization_id;
+        }
+
+        if (!orgId) {
+          setIsLoading(false);
+          return;
+        }
+
+        setActiveOrgId(orgId);
+
+        // Fetch AI Settings for this organization
+        const { data: orgData, error } = await supabase
           .from('organizations')
           .select('ai_settings')
-          .eq('id', currentUserProfile.organization_id)
+          .eq('id', orgId)
           .single();
         
         if (error) throw error;
         
-        if (data?.ai_settings && Object.keys(data.ai_settings).length > 0) {
+        if (orgData?.ai_settings && Object.keys(orgData.ai_settings).length > 0) {
           setAiSettings({
-            active_models: { ...DEFAULT_AI_SETTINGS.active_models, ...data.ai_settings.active_models },
-            thresholds: { ...DEFAULT_AI_SETTINGS.thresholds, ...data.ai_settings.thresholds }
+            active_models: { ...DEFAULT_AI_SETTINGS.active_models, ...orgData.ai_settings.active_models },
+            thresholds: { ...DEFAULT_AI_SETTINGS.thresholds, ...orgData.ai_settings.thresholds }
           });
         }
       } catch (error) {
-        console.error('Error fetching AI settings:', error);
+        console.error('Error initializing AI Center:', error);
       } finally {
         setIsLoading(false);
       }
     };
 
-    fetchAiSettings();
-  }, [currentUserProfile]);
+    initializeCommandCenter();
+  }, [currentUserProfile, navigate]);
 
   const handleModelToggle = (modelKey) => {
     setAiSettings(prev => {
@@ -81,7 +109,11 @@ const AiOrchestration = ({ currentUserProfile, isEn = true, triggerToast }) => {
       const isCurrentlyOn = prev.active_models[modelKey];
 
       if (isCurrentlyOn && currentActiveCount === 1) {
-        if (triggerToast) triggerToast(isEn ? 'Critical: At least one AI model must remain active.' : 'שגיאה קריטית: לפחות מודל AI אחד חייב להיות פעיל.', 'error');
+        if (triggerToast) {
+          triggerToast(isEn ? 'Critical: At least one AI model must remain active.' : 'שגיאה קריטית: לפחות מודל AI אחד חייב להיות פעיל.', 'error');
+        } else {
+          alert(isEn ? 'Critical: At least one AI model must remain active.' : 'שגיאה קריטית: לפחות מודל AI אחד חייב להיות פעיל.');
+        }
         return prev;
       }
 
@@ -105,15 +137,22 @@ const AiOrchestration = ({ currentUserProfile, isEn = true, triggerToast }) => {
   };
 
   const saveAiSettings = async () => {
+    if (!activeOrgId) return;
+    
     setIsSaving(true);
     try {
       const { error } = await supabase
         .from('organizations')
         .update({ ai_settings: aiSettings })
-        .eq('id', currentUserProfile.organization_id);
+        .eq('id', activeOrgId);
 
       if (error) throw error;
-      if (triggerToast) triggerToast(isEn ? 'AI Orchestration settings updated.' : 'הגדרות האורקסטרציה של ה-AI עודכנו.', 'success');
+      
+      if (triggerToast) {
+        triggerToast(isEn ? 'AI Orchestration settings updated.' : 'הגדרות האורקסטרציה של ה-AI עודכנו.', 'success');
+      } else {
+        alert(isEn ? 'AI Orchestration settings updated.' : 'הגדרות האורקסטרציה של ה-AI עודכנו.');
+      }
     } catch (error) {
       console.error('Save AI Settings error:', error);
       if (triggerToast) triggerToast(isEn ? 'Failed to save AI settings.' : 'שגיאה בשמירת הגדרות ה-AI.', 'error');
@@ -129,21 +168,22 @@ const AiOrchestration = ({ currentUserProfile, isEn = true, triggerToast }) => {
   };
 
   if (isLoading) {
-    return <div style={{ color: '#a855f7', textAlign: 'center', paddingTop: '100px' }}>Loading Orchestration Engine...</div>;
+    return <div style={{ minHeight: '100vh', backgroundColor: '#020617', color: '#a855f7', textAlign: 'center', paddingTop: '150px', fontSize: '1.2rem', fontWeight: 'bold' }}>Loading Orchestration Engine...</div>;
   }
 
   return (
-    <div style={{ minHeight: '100vh', backgroundColor: '#020617', padding: '40px 20px', color: '#f8fafc', fontFamily: 'system-ui, sans-serif', direction: isEn ? 'ltr' : 'rtl' }}>
+    <div style={{ minHeight: '100vh', backgroundColor: '#020617', padding: '40px 20px', color: '#f8fafc', fontFamily: 'system-ui, sans-serif', direction: isRtl ? 'rtl' : 'ltr' }}>
       <div style={{ maxWidth: '1200px', margin: '0 auto', animation: 'fadeIn 0.4s ease-out' }}>
         
         {/* HEADER */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '20px', marginBottom: '40px' }}>
           <div>
             <button onClick={() => navigate('/dashboard')} style={{ background: 'transparent', border: 'none', color: '#94a3b8', display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', padding: 0, marginBottom: '15px', fontWeight: 'bold' }}>
-              {SVGIcons.ArrowLeft} {isEn ? 'Back to Dashboard' : 'חזור ללוח הבקרה'}
+              <span style={{ transform: isRtl ? 'rotate(180deg)' : 'none', display: 'inline-block' }}>{Icons.ArrowLeft}</span> 
+              {isEn ? 'Back to Dashboard' : 'חזור ללוח הבקרה'}
             </button>
             <h1 style={{ margin: '0 0 10px 0', fontSize: '2.5rem', display: 'flex', alignItems: 'center', gap: '15px' }}>
-              <span style={{ color: '#a855f7' }}>{SVGIcons.Cpu}</span> {isEn ? 'AI Consensus Orchestrator' : 'ניהול קונצנזוס AI'}
+              <span style={{ color: '#a855f7' }}>{Icons.Cpu}</span> {isEn ? 'AI Consensus Orchestrator' : 'ניהול קונצנזוס AI'}
             </h1>
             <p style={{ color: '#94a3b8', margin: 0, fontSize: '1.1rem', maxWidth: '600px' }}>
               {isEn ? 'Global command layer for routing verification models and setting algorithmic strictness thresholds.' : 'שכבת פיקוד גלובלית לניתוב מודלי אימות וקביעת ספי חומרה אלגוריתמיים.'}
@@ -159,12 +199,12 @@ const AiOrchestration = ({ currentUserProfile, isEn = true, triggerToast }) => {
           </button>
         </div>
 
-        {/* PANELS */}
+        {/* PANELS CONTAINER */}
         <div style={{ display: 'flex', gap: '30px', flexWrap: 'wrap' }}>
           
           {/* PANEL A: MODEL ROUTING */}
           <div style={{ flex: '1 1 400px', backgroundColor: 'rgba(15, 23, 42, 0.8)', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.05)', padding: '30px', boxShadow: '0 10px 30px rgba(0,0,0,0.5)' }}>
-            <h3 style={{ color: '#f8fafc', marginTop: 0, marginBottom: '25px', fontSize: '1.25rem', borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '15px' }}>
+            <h3 style={{ color: '#f8fafc', marginTop: 0, marginBottom: '25px', fontSize: '1.25rem', borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '15px', textAlign: isRtl ? 'right' : 'left' }}>
               {isEn ? 'Active Routing Models' : 'מודלי ניתוב פעילים'}
             </h3>
             
@@ -178,7 +218,7 @@ const AiOrchestration = ({ currentUserProfile, isEn = true, triggerToast }) => {
                       onClick={() => handleModelToggle(key)}
                       style={{ width: '50px', height: '26px', backgroundColor: isActive ? '#a855f7' : '#334155', borderRadius: '13px', position: 'relative', cursor: 'pointer', transition: 'background-color 0.3s' }}
                     >
-                      <div style={{ width: '22px', height: '22px', backgroundColor: '#fff', borderRadius: '50%', position: 'absolute', top: '2px', left: isActive ? '26px' : '2px', transition: 'left 0.3s', boxShadow: '0 2px 4px rgba(0,0,0,0.3)' }} />
+                      <div style={{ width: '22px', height: '22px', backgroundColor: '#fff', borderRadius: '50%', position: 'absolute', top: '2px', left: isActive ? '26px' : '2px', right: isActive ? '2px' : '26px', transition: 'all 0.3s', boxShadow: '0 2px 4px rgba(0,0,0,0.3)' }} />
                     </div>
                   </div>
                 );
@@ -193,7 +233,7 @@ const AiOrchestration = ({ currentUserProfile, isEn = true, triggerToast }) => {
                 {isEn ? 'Dynamic Confidence Thresholds' : 'ספי ביטחון דינמיים'}
               </h3>
               <span style={{ color: '#64748b', fontSize: '0.85rem', fontWeight: 'bold', backgroundColor: '#0f172a', padding: '4px 12px', borderRadius: '20px', border: '1px solid #334155' }}>
-                Min: 50% | Max: 99%
+                {isEn ? 'Min: 50% | Max: 99%' : 'מינימום: 50% | מקסימום: 99%'}
               </span>
             </div>
 
@@ -206,7 +246,7 @@ const AiOrchestration = ({ currentUserProfile, isEn = true, triggerToast }) => {
                   <div key={category} style={{ backgroundColor: '#0f172a', padding: '20px', borderRadius: '12px', border: '1px solid #1e293b' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
                       <span style={{ color: '#cbd5e1', fontWeight: 'bold', fontSize: '1rem' }}>{category}</span>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '5px', direction: 'ltr' }}>
                         <input 
                           type="number" 
                           min="50" max="99" 

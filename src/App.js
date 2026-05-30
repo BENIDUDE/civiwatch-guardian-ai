@@ -37,10 +37,11 @@ import Marketplace from './pages/Marketplace';
 import GenerativeAI from './pages/GenerativeAI';
 import VirtualReality from './pages/VirtualReality';
 import AccessibilityStatement from './pages/AccessibilityStatement';
-import CiviWatchFAQ from './pages/CiviWatchFAQ'; // <-- NEW IMPORT
+import CiviWatchFAQ from './pages/CiviWatchFAQ';
 
 import CouncilSimulatorDoc from './components/admin/CouncilSimulatorDoc';
 import Pricing from './pages/Pricing'; 
+import AiOrchestration from './components/dashboard/AiOrchestration'; // <-- NEW IMPORT
 
 // --- ROUTE PROTECTION: GLOBAL ADMIN ONLY ---
 const SuperAdminRoute = ({ children }) => {
@@ -461,6 +462,13 @@ const AppContent = () => {
               </ProtectedRoute>
             } />
             
+            {/* AI ORCHESTRATION COMMAND CENTER */}
+            <Route path="/ai-orchestration" element={
+              <ProtectedRoute>
+                <AiOrchestration isEn={isEn} />
+              </ProtectedRoute>
+            } />
+
             <Route path="/pricing" element={<Pricing isEn={isEn} />} />
             
             <Route path="/solutions/governments" element={<Governments lang={lang} />} />
