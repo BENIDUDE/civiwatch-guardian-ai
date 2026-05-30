@@ -156,11 +156,13 @@ const Allocation = ({ teamMembers, isEn, triggerToast, userProfile }) => {
             {SVGIcons.Users} {isEn ? 'Operators' : 'מפעילים'}
           </p>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-            {(teamMembers || []).filter(m => m.role?.toLowerCase().includes('operator')).map(op => (
-              <div key={op.id} draggable onDragStart={(e) => onDragStart(e, 'operator', op.id)} style={{ padding: '6px 12px', backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '6px', color: '#fff', fontSize: '13px', cursor: 'grab', transition: 'all 0.2s' }}>
-                {op.display_name || op.email.split('@')[0]}
-              </div>
-            ))}
+            {(teamMembers || [])
+              .filter(m => m.role?.toLowerCase()?.includes('operator'))
+              .map(op => (
+                <div key={op.id} draggable onDragStart={(e) => onDragStart(e, 'operator', op.id)} style={{ padding: '6px 12px', backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '6px', color: '#fff', fontSize: '13px', cursor: 'grab', transition: 'all 0.2s' }}>
+                  {op.display_name || op.email?.split('@')[0] || 'Unknown Operator'}
+                </div>
+              ))}
           </div>
         </div>
 
@@ -206,7 +208,7 @@ const Allocation = ({ teamMembers, isEn, triggerToast, userProfile }) => {
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', minHeight: '40px', padding: '10px', backgroundColor: 'rgba(255,255,255,0.02)', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)' }}>
               {selectedOperators.map(op => (
                 <span key={op.id} style={{ backgroundColor: '#38bdf8', color: '#0f172a', padding: '5px 12px', borderRadius: '20px', fontSize: '12px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  {op.display_name} 
+                  {op.display_name || op.email?.split('@')[0] || 'Operator'} 
                   <button onClick={() => removeItem(op.id, setSelectedOperators, selectedOperators)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#0f172a', display: 'flex', alignItems: 'center', padding: 0, opacity: 0.7 }}>
                     {SVGIcons.X}
                   </button>
