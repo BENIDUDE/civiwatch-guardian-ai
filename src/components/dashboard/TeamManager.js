@@ -3,7 +3,7 @@
  * @description Team Member Management & QA Configuration.
  * Fully integrated the rich UI (Badges, Settings, Elevation) with secure 
  * Supabase Edge Functions for invites and Vercel Serverless Functions for CSV Bulk Actions.
- * UPDATED: Added Magic Link support (no passwords), 50-user max upload, role typo fallback, and CSV template generator.
+ * UPDATED: CSV template now includes 3 placeholder rows for all NGO permission levels.
  */
 import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../../supabaseClient';
@@ -199,7 +199,8 @@ const TeamManager = ({ teamMembers, currentUserProfile, isEn, triggerToast, refr
   // --- BULK OPERATIONS ---
   
   const handleDownloadTemplate = () => {
-    const csvContent = "data:text/csv;charset=utf-8,email,displayName,role\njakobmi57@gmail.com,Jakob,Operator L1\nmanager@example.org,Org Manager,NGO Admin";
+    // 3 Placeholders covering the primary NGO user roles
+    const csvContent = "data:text/csv;charset=utf-8,email,displayName,role\noperator@example.com,Jane Doe,Operator L1\nmoderator@example.com,John Smith,Moderator L2\nadmin@example.org,Alice Admin,NGO Admin";
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement("a");
     link.setAttribute("href", encodedUri);
@@ -245,7 +246,6 @@ const TeamManager = ({ teamMembers, currentUserProfile, isEn, triggerToast, refr
       header: true,
       skipEmptyLines: true,
       complete: (results) => {
-        // 50-User Hard Limit Circuit Breaker
         if (results.data.length > 50) {
           triggerToast(isEn ? 'Upload limit exceeded. Maximum 50 users per file.' : 'חריגה ממגבלת ההעלאה. עד 50 משתמשים בקובץ.', 'error');
           if (fileInputAddRef.current) fileInputAddRef.current.value = ''; 
