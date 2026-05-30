@@ -3,6 +3,7 @@
  * @description Team Member Management & QA Configuration.
  * Fully integrated the rich UI (Badges, Settings, Elevation) with secure 
  * Supabase Edge Functions for invites and Vercel Serverless Functions for CSV Bulk Actions.
+ * UPDATED: Added Magic Link support (no passwords), 50-user max upload, role typo fallback, and CSV template generator.
  */
 import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../../supabaseClient';
@@ -14,7 +15,8 @@ const SVGIcons = {
   AlertTriangle: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>,
   Mail: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path><polyline points="22,6 12,13 2,6"></polyline></svg>,
   ArrowUpCircle: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="16 12 12 8 8 12"></polyline><line x1="12" y1="16" x2="12" y2="8"></line></svg>,
-  Database: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"></ellipse><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"></path><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"></path></svg>
+  Database: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"></ellipse><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"></path><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"></path></svg>,
+  Download: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
 };
 
 const TeamManager = ({ teamMembers, currentUserProfile, isEn, triggerToast, refreshData }) => {
@@ -55,6 +57,15 @@ const TeamManager = ({ teamMembers, currentUserProfile, isEn, triggerToast, refr
     if (['moderator l2'].includes(role)) return 2;
     if (['operator l1', 'operator'].includes(role)) return 1;
     return 0;
+  };
+
+  // Typo Safety Net: Maps any unrecognized string directly to Operator L1
+  const getSafeRole = (roleStr) => {
+    const safeRole = (roleStr || '').toLowerCase().trim();
+    if (safeRole.includes('global') || safeRole.includes('super') || safeRole.includes('system')) return 'Global Admin';
+    if (safeRole.includes('ngo') || safeRole === 'admin') return 'NGO Admin';
+    if (safeRole.includes('moderator') || safeRole.includes('l2')) return 'Moderator L2';
+    return 'Operator L1'; 
   };
 
   const myPowerLevel = getRoleLevel(currentUserProfile?.role);
@@ -115,7 +126,6 @@ const TeamManager = ({ teamMembers, currentUserProfile, isEn, triggerToast, refr
     const targetEmail = inviteEmail.toLowerCase();
 
     try {
-      // 1. Create DB record first (ensures the manager sees the pending user immediately)
       const { error: dbError } = await supabase.from('user_profiles').insert([{
         email: targetEmail,
         organization_id: currentUserProfile.organization_id,
@@ -126,7 +136,6 @@ const TeamManager = ({ teamMembers, currentUserProfile, isEn, triggerToast, refr
 
       if (dbError && dbError.code !== '23505') throw dbError;
 
-      // 2. Dispatch email via Supabase Edge Function
       const { error: funcError } = await supabase.functions.invoke('invite-user', {
         body: { email: targetEmail }
       });
@@ -189,6 +198,17 @@ const TeamManager = ({ teamMembers, currentUserProfile, isEn, triggerToast, refr
 
   // --- BULK OPERATIONS ---
   
+  const handleDownloadTemplate = () => {
+    const csvContent = "data:text/csv;charset=utf-8,email,displayName,role\njakobmi57@gmail.com,Jakob,Operator L1\nmanager@example.org,Org Manager,NGO Admin";
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", "CiviWatch_Bulk_Upload_Template.csv");
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   const executeBulkAdminAction = async (action, usersArray) => {
     setIsBulkLoading(true);
     setBulkLogs(null);
@@ -225,11 +245,18 @@ const TeamManager = ({ teamMembers, currentUserProfile, isEn, triggerToast, refr
       header: true,
       skipEmptyLines: true,
       complete: (results) => {
+        // 50-User Hard Limit Circuit Breaker
+        if (results.data.length > 50) {
+          triggerToast(isEn ? 'Upload limit exceeded. Maximum 50 users per file.' : 'חריגה ממגבלת ההעלאה. עד 50 משתמשים בקובץ.', 'error');
+          if (fileInputAddRef.current) fileInputAddRef.current.value = ''; 
+          if (fileInputRemoveRef.current) fileInputRemoveRef.current.value = ''; 
+          return;
+        }
+
         const parsedUsers = results.data.map(row => ({
           email: row.email?.trim(),
-          displayName: row.displayName?.trim(),
-          role: row.role?.trim() || 'operator',
-          password: row.password?.trim(),
+          displayName: row.displayName?.trim() || '',
+          role: getSafeRole(row.role), 
           organizationId: currentUserProfile.organization_id
         })).filter(u => u.email); 
 
@@ -419,10 +446,22 @@ const TeamManager = ({ teamMembers, currentUserProfile, isEn, triggerToast, refr
       {/* 3. Bulk Upload Panel */}
       {isOrgAdmin && showBulkActions && (
         <div style={{ backgroundColor: 'rgba(168, 85, 247, 0.05)', padding: '25px', borderRadius: '12px', border: '1px solid rgba(168, 85, 247, 0.3)', animation: 'fadeIn 0.3s' }}>
-          <h4 style={{ color: '#a855f7', marginTop: 0, marginBottom: '15px' }}>{isEn ? 'CSV Bulk Operations' : 'פעולות גורפות באמצעות CSV'}</h4>
-          <p style={{ color: '#94a3b8', fontSize: '0.9rem', marginBottom: '20px' }}>
-            {isEn ? 'Upload a CSV file containing headers for email, displayName, role, and password.' : 'העלה קובץ CSV הכולל עמודות עבור דוא״ל, שם, תפקיד וסיסמה.'}
-          </p>
+          
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '15px' }}>
+            <div>
+              <h4 style={{ color: '#a855f7', marginTop: 0, marginBottom: '10px' }}>{isEn ? 'CSV Bulk Operations' : 'פעולות גורפות באמצעות CSV'}</h4>
+              <p style={{ color: '#94a3b8', fontSize: '0.9rem', marginBottom: '5px' }}>
+                {isEn ? 'Upload a CSV file containing headers: email, displayName, role.' : 'העלה קובץ CSV הכולל עמודות: email, displayName, role.'}
+              </p>
+              <p style={{ color: '#ef4444', fontSize: '0.85rem', marginBottom: '20px', fontWeight: 'bold' }}>
+                {isEn ? '⚠️ Maximum 50 users per upload. Magic Links will be used for login.' : '⚠️ מקסימום 50 משתמשים להעלאה. החיבור יתבצע באמצעות קישורי קסם (Magic Links).'}
+              </p>
+            </div>
+            <button onClick={handleDownloadTemplate} style={{ backgroundColor: 'rgba(168, 85, 247, 0.1)', color: '#a855f7', border: '1px solid rgba(168, 85, 247, 0.3)', padding: '8px 16px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              {SVGIcons.Download} {isEn ? 'Download Template' : 'הורד תבנית CSV'}
+            </button>
+          </div>
+
           <div style={{ display: 'flex', gap: '15px', flexWrap: 'wrap' }}>
             <input type="file" accept=".csv" ref={fileInputAddRef} style={{ display: 'none' }} onChange={(e) => handleFileUpload(e, 'add')} id="csvAddUpload" />
             <label htmlFor="csvAddUpload" style={{ padding: '10px 20px', borderRadius: '8px', fontWeight: 'bold', backgroundColor: '#3b82f6', color: '#fff', cursor: isBulkLoading ? 'wait' : 'pointer', opacity: isBulkLoading ? 0.5 : 1 }}>
@@ -609,6 +648,6 @@ const TeamManager = ({ teamMembers, currentUserProfile, isEn, triggerToast, refr
       )}
     </div>
   );
-}; 
+};
 
-export default TeamManager; 
+export default TeamManager;
