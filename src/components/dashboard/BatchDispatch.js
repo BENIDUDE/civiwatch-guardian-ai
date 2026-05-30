@@ -6,6 +6,8 @@
  * * --- SECURITY ---
  * Features strict client-side parsing (no file hosting) and input sanitization to prevent 
  * CSV Formula Injection and XSS attacks via external network comments.
+ * * --- DATA INTEGRITY ---
+ * Implements strict platform name normalization to prevent duplicate dropdown entries (e.g. "facebook" vs "Facebook").
  */
 import React, { useState, useRef } from 'react';
 import { supabase } from '../../supabaseClient';
@@ -32,6 +34,27 @@ const sanitizeInput = (text) => {
   return clean.replace(/</g, "&lt;").replace(/>/g, "&gt;");
 };
 
+// --- PLATFORM NORMALIZER (Fixes the duplicate dropdown issue) ---
+const normalizePlatform = (platform) => {
+  if (!platform) return 'Unknown';
+  const p = platform.trim().toLowerCase();
+  
+  if (p === 'facebook') return 'Facebook';
+  if (p === 'x' || p === 'twitter' || p === 'twitter/x') return 'Twitter/X';
+  if (p === 'tiktok') return 'TikTok';
+  if (p === 'instagram') return 'Instagram';
+  if (p === 'telegram') return 'Telegram';
+  if (p === 'youtube') return 'YouTube';
+  if (p === 'linkedin') return 'LinkedIn';
+  if (p === 'reddit') return 'Reddit';
+  if (p === 'discord') return 'Discord';
+  if (p === 'truth social') return 'Truth Social';
+  if (p === 'vk') return 'VK';
+  
+  // Generic fallback: Capitalizes the first letter of each word
+  return platform.trim().replace(/\b\w/g, l => l.toUpperCase());
+};
+
 // --- STATUS HELPER (Added to support AI states) ---
 const getCalculatedStatus = (report) => {
   let calcStatus = report.status || 'Pending';
@@ -53,32 +76,34 @@ const BatchDispatch = ({ reports, isEn, triggerToast, refreshData }) => {
   
   const fileInputRef = useRef(null);
 
-  // UPDATED: Now checks for both 'Verified' and 'AI Verified'
+  // Checks for both 'Verified' and 'AI Verified'
   const baseExportList = exportType === 'initial' 
     ? (reports || []).filter(r => ['Verified', 'AI Verified'].includes(getCalculatedStatus(r)) && r._table !== 'assignments')
     : (reports || []).filter(r => getCalculatedStatus(r) === 'Pending Appeal' && r._table !== 'assignments');
 
+  // Filter uses the normalized platform
   const readyForDispatch = exportPlatform === 'all' 
     ? baseExportList 
-    : baseExportList.filter(r => r.platform?.toLowerCase() === exportPlatform.toLowerCase());
+    : baseExportList.filter(r => normalizePlatform(r.platform).toLowerCase() === exportPlatform.toLowerCase());
 
-  // Aggregate pending items using calculated status
+  // Aggregate pending items using calculated status and normalized platform
   const pendingNetwork = (reports || []).filter(r => ['Pending Network Action', 'Appeal in Progress'].includes(getCalculatedStatus(r)));
   const pendingByPlatform = pendingNetwork.reduce((acc, r) => {
-    const plat = r.platform || 'Unknown';
+    const plat = normalizePlatform(r.platform);
     acc[plat] = (acc[plat] || 0) + 1;
     return acc;
   }, {});
 
-  // Aggregate successful takedowns using calculated status
+  // Aggregate successful takedowns using calculated status and normalized platform
   const recentSuccess = (reports || []).filter(r => ['Takedown Successful', 'Appeal Successful'].includes(getCalculatedStatus(r)));
   const successByPlatform = recentSuccess.reduce((acc, r) => {
-    const plat = r.platform || 'Unknown';
+    const plat = normalizePlatform(r.platform);
     acc[plat] = (acc[plat] || 0) + 1;
     return acc;
   }, {});
 
-  const uniqueReadyPlatforms = [...new Set(baseExportList.map(r => r.platform).filter(Boolean))];
+  // Extract unique normalized platforms for the dropdown
+  const uniqueReadyPlatforms = [...new Set(baseExportList.map(r => normalizePlatform(r.platform)).filter(Boolean))].sort();
 
   const handleExport = async () => {
     if (readyForDispatch.length === 0) {
@@ -91,7 +116,7 @@ const BatchDispatch = ({ reports, isEn, triggerToast, refreshData }) => {
       const exportData = readyForDispatch.map(report => ({
         civiwatch_id: `CWID-${report.id}`,
         dispatch_type: exportType === 'appeals' ? 'APPEAL' : 'INITIAL',
-        platform: report.platform,
+        platform: normalizePlatform(report.platform), // Ensures exported CSV is also clean
         category: report.category,
         url: report.content, 
         evidence_link: report.image_url || report.drive_link || 'None',
