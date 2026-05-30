@@ -1,7 +1,7 @@
 /**
  * @file Allocation.js
  * @description The Task Allocation "Blueprint" interface for Moderators and Admins.
- * Provides a drag-and-drop UI to manually dispatch targeted assignments to specific 
+ * Provides a drag-and-drop OR click-to-select UI to manually dispatch targeted assignments to specific 
  * operators. Automatically fetches and attaches relevant SOP Google Drive links from the DB,
  * and explicitly warns the user if no guide is available for the current selection.
  */
@@ -18,7 +18,9 @@ const SVGIcons = {
   Send: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>,
   X: <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>,
   Link: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg>,
-  AlertTriangle: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+  AlertTriangle: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>,
+  Plus: <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>,
+  Check: <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
 };
 
 const Allocation = ({ teamMembers, isEn, triggerToast, userProfile }) => {
@@ -93,6 +95,13 @@ const Allocation = ({ teamMembers, isEn, triggerToast, userProfile }) => {
     }
   };
 
+  // --- CLICK-TO-SELECT MULTI-SELECT LOGIC ---
+  const handleOperatorClick = (op) => {
+    if (!selectedOperators.find(o => o.id === op.id)) {
+      setSelectedOperators([...selectedOperators, op]);
+    }
+  };
+
   const handleDispatch = async () => {
     if (selectedOperators.length === 0 || !selectedPlatform || !selectedCategory) {
       triggerToast(isEn ? 'Please fill all required fields' : 'נא למלא את כל שדות החובה', 'error');
@@ -150,19 +159,45 @@ const Allocation = ({ teamMembers, isEn, triggerToast, userProfile }) => {
       <div style={{ flex: '1 1 300px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
         <h3 style={{ color: '#fff', margin: 0 }}>{isEn ? 'Allocation Assets' : 'מרכיבי הקצאה'}</h3>
         
-        {/* Operators Draggables */}
+        {/* Operators Draggables & Clickables */}
         <div style={{ backgroundColor: 'rgba(30, 41, 59, 0.4)', padding: '15px', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.05)' }}>
           <p style={{ color: '#94a3b8', fontSize: '12px', marginBottom: '10px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '6px', textTransform: 'uppercase' }}>
-            {SVGIcons.Users} {isEn ? 'Operators' : 'מפעילים'}
+            {SVGIcons.Users} {isEn ? 'Operators (Click to Select)' : 'מפעילים (לחץ לבחירה)'}
           </p>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
             {(teamMembers || [])
-              .filter(m => m.role?.toLowerCase()?.includes('operator'))
-              .map(op => (
-                <div key={op.id} draggable onDragStart={(e) => onDragStart(e, 'operator', op.id)} style={{ padding: '6px 12px', backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '6px', color: '#fff', fontSize: '13px', cursor: 'grab', transition: 'all 0.2s' }}>
-                  {op.display_name || op.email?.split('@')[0] || 'Unknown Operator'}
-                </div>
-              ))}
+              .filter(m => 
+                m.role?.toLowerCase()?.includes('operator') && 
+                m.display_name !== 'Pending Invite' && 
+                m.email // Strictly filters out ghost records without emails
+              )
+              .map(op => {
+                const isSelected = selectedOperators.some(o => o.id === op.id);
+                return (
+                  <div 
+                    key={op.id} 
+                    draggable={!isSelected} 
+                    onDragStart={(e) => !isSelected && onDragStart(e, 'operator', op.id)} 
+                    onClick={() => !isSelected && handleOperatorClick(op)}
+                    style={{ 
+                      padding: '6px 12px', 
+                      backgroundColor: isSelected ? 'rgba(30, 41, 59, 0.8)' : '#1e293b', 
+                      border: isSelected ? '1px solid #334155' : '1px solid #38bdf8', 
+                      borderRadius: '6px', 
+                      color: isSelected ? '#64748b' : '#fff', 
+                      fontSize: '13px', 
+                      cursor: isSelected ? 'default' : 'pointer', 
+                      transition: 'all 0.2s',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px'
+                    }}
+                  >
+                    {isSelected ? <span style={{ color: '#10b981', display: 'flex' }}>{SVGIcons.Check}</span> : <span style={{ color: '#38bdf8', display: 'flex' }}>{SVGIcons.Plus}</span>}
+                    {op.display_name || op.email?.split('@')[0]}
+                  </div>
+                );
+              })}
           </div>
         </div>
 
@@ -173,7 +208,7 @@ const Allocation = ({ teamMembers, isEn, triggerToast, userProfile }) => {
           </p>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
             {platforms.map(p => (
-              <div key={p} draggable onDragStart={(e) => onDragStart(e, 'platform', p)} style={{ padding: '6px 12px', backgroundColor: 'rgba(56, 189, 248, 0.1)', border: '1px solid rgba(56, 189, 248, 0.3)', color: '#38bdf8', borderRadius: '6px', fontSize: '13px', cursor: 'grab', transition: 'all 0.2s' }}>
+              <div key={p} draggable onDragStart={(e) => onDragStart(e, 'platform', p)} onClick={() => setSelectedPlatform(p)} style={{ padding: '6px 12px', backgroundColor: selectedPlatform === p ? '#38bdf8' : 'rgba(56, 189, 248, 0.1)', border: '1px solid rgba(56, 189, 248, 0.3)', color: selectedPlatform === p ? '#0f172a' : '#38bdf8', borderRadius: '6px', fontSize: '13px', cursor: 'pointer', transition: 'all 0.2s', fontWeight: selectedPlatform === p ? 'bold' : 'normal' }}>
                 {isEn || p !== 'Other Task' ? p : 'משימה אחרת'}
               </div>
             ))}
@@ -187,7 +222,7 @@ const Allocation = ({ teamMembers, isEn, triggerToast, userProfile }) => {
           </p>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
             {categories.map(c => (
-              <div key={c} draggable onDragStart={(e) => onDragStart(e, 'category', c)} style={{ padding: '6px 12px', backgroundColor: 'rgba(168, 85, 247, 0.1)', border: '1px solid rgba(168, 85, 247, 0.3)', color: '#a855f7', borderRadius: '6px', fontSize: '13px', cursor: 'grab', transition: 'all 0.2s' }}>
+              <div key={c} draggable onDragStart={(e) => onDragStart(e, 'category', c)} onClick={() => setSelectedCategory(c)} style={{ padding: '6px 12px', backgroundColor: selectedCategory === c ? '#a855f7' : 'rgba(168, 85, 247, 0.1)', border: '1px solid rgba(168, 85, 247, 0.3)', color: selectedCategory === c ? '#fff' : '#a855f7', borderRadius: '6px', fontSize: '13px', cursor: 'pointer', transition: 'all 0.2s', fontWeight: selectedCategory === c ? 'bold' : 'normal' }}>
                 {isEn || c !== 'Other Task' ? c : 'משימה אחרת'}
               </div>
             ))}
@@ -207,28 +242,28 @@ const Allocation = ({ teamMembers, isEn, triggerToast, userProfile }) => {
             <label style={{ color: '#94a3b8', fontSize: '13px', display: 'block', marginBottom: '10px', fontWeight: 'bold' }}>{isEn ? 'Assigned To:' : 'יוקצה ל:'}</label>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', minHeight: '40px', padding: '10px', backgroundColor: 'rgba(255,255,255,0.02)', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)' }}>
               {selectedOperators.map(op => (
-                <span key={op.id} style={{ backgroundColor: '#38bdf8', color: '#0f172a', padding: '5px 12px', borderRadius: '20px', fontSize: '12px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  {op.display_name || op.email?.split('@')[0] || 'Operator'} 
-                  <button onClick={() => removeItem(op.id, setSelectedOperators, selectedOperators)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#0f172a', display: 'flex', alignItems: 'center', padding: 0, opacity: 0.7 }}>
+                <span key={op.id} style={{ backgroundColor: '#38bdf8', color: '#0f172a', padding: '5px 12px', borderRadius: '20px', fontSize: '12px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px', animation: 'fadeIn 0.2s ease-out' }}>
+                  {op.display_name || op.email?.split('@')[0]} 
+                  <button onClick={() => removeItem(op.id, setSelectedOperators, selectedOperators)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#0f172a', display: 'flex', alignItems: 'center', padding: 0, opacity: 0.7, transition: 'opacity 0.2s' }} onMouseOver={(e) => e.currentTarget.style.opacity = 1} onMouseOut={(e) => e.currentTarget.style.opacity = 0.7}>
                     {SVGIcons.X}
                   </button>
                 </span>
               ))}
-              {selectedOperators.length === 0 && <span style={{ color: '#475569', fontSize: '13px', display: 'flex', alignItems: 'center' }}>{isEn ? 'Drag operators here...' : 'גרור מפעילים לכאן...'}</span>}
+              {selectedOperators.length === 0 && <span style={{ color: '#475569', fontSize: '13px', display: 'flex', alignItems: 'center' }}>{isEn ? 'Drag or click operators to add...' : 'גרור או לחץ על מפעילים להוספה...'}</span>}
             </div>
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
             <div>
               <label style={{ color: '#94a3b8', fontSize: '13px', display: 'block', marginBottom: '10px', fontWeight: 'bold' }}>{isEn ? 'Platform:' : 'פלטפורמה:'}</label>
-              <div style={{ padding: '12px', backgroundColor: 'rgba(56, 189, 248, 0.05)', border: '1px solid rgba(56, 189, 248, 0.2)', borderRadius: '8px', textAlign: 'center', fontWeight: selectedPlatform ? 'bold' : 'normal', color: selectedPlatform ? '#38bdf8' : '#64748b' }}>
-                {selectedPlatform ? (isEn || selectedPlatform !== 'Other Task' ? selectedPlatform : 'משימה אחרת') : (isEn ? 'Drag Platform' : 'גרור פלטפורמה')}
+              <div style={{ padding: '12px', backgroundColor: 'rgba(56, 189, 248, 0.05)', border: '1px solid rgba(56, 189, 248, 0.2)', borderRadius: '8px', textAlign: 'center', fontWeight: selectedPlatform ? 'bold' : 'normal', color: selectedPlatform ? '#38bdf8' : '#64748b', transition: 'all 0.2s' }}>
+                {selectedPlatform ? (isEn || selectedPlatform !== 'Other Task' ? selectedPlatform : 'משימה אחרת') : (isEn ? 'Drag or Click Platform' : 'גרור או בחר פלטפורמה')}
               </div>
             </div>
             <div>
               <label style={{ color: '#94a3b8', fontSize: '13px', display: 'block', marginBottom: '10px', fontWeight: 'bold' }}>{isEn ? 'Subject:' : 'נושא:'}</label>
-              <div style={{ padding: '12px', backgroundColor: 'rgba(168, 85, 247, 0.05)', border: '1px solid rgba(168, 85, 247, 0.2)', borderRadius: '8px', textAlign: 'center', fontWeight: selectedCategory ? 'bold' : 'normal', color: selectedCategory ? '#a855f7' : '#64748b' }}>
-                {selectedCategory ? (isEn || selectedCategory !== 'Other Task' ? selectedCategory : 'משימה אחרת') : (isEn ? 'Drag Subject' : 'גרור נושא')}
+              <div style={{ padding: '12px', backgroundColor: 'rgba(168, 85, 247, 0.05)', border: '1px solid rgba(168, 85, 247, 0.2)', borderRadius: '8px', textAlign: 'center', fontWeight: selectedCategory ? 'bold' : 'normal', color: selectedCategory ? '#a855f7' : '#64748b', transition: 'all 0.2s' }}>
+                {selectedCategory ? (isEn || selectedCategory !== 'Other Task' ? selectedCategory : 'משימה אחרת') : (isEn ? 'Drag or Click Subject' : 'גרור או בחר נושא')}
               </div>
             </div>
           </div>
@@ -262,7 +297,7 @@ const Allocation = ({ teamMembers, isEn, triggerToast, userProfile }) => {
             <textarea value={instructions} onChange={(e) => setInstructions(e.target.value)} placeholder={isEn ? "Describe specific target or search queries..." : "תאר יעד ספציפי או שאילתות חיפוש..."} style={{ width: '100%', padding: '12px', backgroundColor: '#0f172a', border: '1px solid #334155', borderRadius: '8px', color: '#fff', minHeight: '80px', outline: 'none', resize: 'vertical', boxSizing: 'border-box' }} />
           </div>
 
-          <button onClick={handleDispatch} disabled={isSubmitting} style={{ width: '100%', padding: '16px', backgroundColor: '#38bdf8', color: '#0f172a', border: 'none', borderRadius: '12px', fontWeight: 'bold', fontSize: '16px', cursor: isSubmitting ? 'not-allowed' : 'pointer', opacity: isSubmitting ? 0.7 : 1, display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '10px', transition: 'background-color 0.2s' }}>
+          <button onClick={handleDispatch} disabled={isSubmitting} style={{ width: '100%', padding: '16px', backgroundColor: '#38bdf8', color: '#0f172a', border: 'none', borderRadius: '12px', fontWeight: 'bold', fontSize: '16px', cursor: isSubmitting ? 'not-allowed' : 'pointer', opacity: isSubmitting ? 0.7 : 1, display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '10px', transition: 'background-color 0.2s', boxShadow: '0 4px 14px 0 rgba(56, 189, 248, 0.2)' }}>
             {isSubmitting ? (isEn ? 'Allocating...' : 'מקצה...') : (
               <>{SVGIcons.Send} {isEn ? 'Deploy Allocations' : 'הקצה משימות'}</>
             )}
