@@ -1,12 +1,12 @@
 /**
  * @file SettingsTab.js
  * @description The Settings hub for the dashboard.
- * Acts as a router for Team Management, SOP Manager (Operation Guides), QA, Billing, and AI Orchestration routing.
+ * Acts as a router for Team Management, SOP Manager (Operation Guides), QA, Billing, and an AI Orchestration gateway.
  * ENFORCES RBAC: Admins see all tabs. Moderators only see Team and Guides.
  */
-import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../../supabaseClient';
+import { useNavigate } from 'react-router-dom';
 import DynamicQAConfig from './DynamicQAConfig';
 import Billing from './Billing';
 import TeamManager from './TeamManager';
@@ -43,14 +43,8 @@ const SettingsTab = ({ teamMembers, currentUserProfile, isEn, triggerToast, refr
   const [newGuide, setNewGuide] = useState({ network: '', category: '', drive_link: '' });
   const [isGuidesLoading, setIsGuidesLoading] = useState(false);
 
-  // --- GUIDES LOGIC EFFECT ---
-  useEffect(() => {
-    if (activeTab === 'guides') {
-      fetchGuidelines();
-    }
-  }, [activeTab]);
-
-  const fetchGuidelines = async () => {
+  // --- USECALLBACK FOR FETCHING DATA ---
+  const fetchGuidelines = useCallback(async () => {
     try {
       const { data, error } = await supabase.from('platform_guidelines').select('*').order('network', { ascending: true });
       if (error) throw error;
@@ -58,7 +52,14 @@ const SettingsTab = ({ teamMembers, currentUserProfile, isEn, triggerToast, refr
     } catch (error) {
       console.error('Error fetching guidelines:', error);
     }
-  };
+  }, []);
+
+  // --- GUIDES LOGIC EFFECT ---
+  useEffect(() => {
+    if (activeTab === 'guides') {
+      fetchGuidelines();
+    }
+  }, [activeTab, fetchGuidelines]);
 
   const handleSaveGuideline = async () => {
     if (!newGuide.network || !newGuide.category || !newGuide.drive_link) {
