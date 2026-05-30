@@ -3,7 +3,8 @@
  * @description Root container for the CiviWatch Operations Center.
  * FEATURE: Context-Aware Help Modal. The Help icon dynamically swaps its content 
  * (explanations and interactive simulators) based on the currently active tab.
- * UPDATED: Integrated the OnboardingWelcome interceptor for new operators.
+ * UPDATED: Integrated the OnboardingWelcome interceptor for new operators, 
+ * and added a strict global filter to block "ghost" users without emails from entering the UI.
  */
 import React, { useEffect, useState, useCallback } from 'react';
 import { supabase } from '../supabaseClient';
@@ -20,7 +21,7 @@ import CiviHQ from '../components/dashboard/CiviHQ';
 import SettingsTab from '../components/dashboard/SettingsTab';
 import SubmitReportsTab from '../components/dashboard/SubmitReportsTab';
 import ReportsTab from '../components/dashboard/ReportsTab';
-import OnboardingWelcome from '../components/dashboard/OnboardingWelcome'; // New Import
+import OnboardingWelcome from '../components/dashboard/OnboardingWelcome'; 
 
 // --- INTERACTIVE ROLE SIMULATOR COMPONENT (For Workspace Help) ---
 const RoleSimulator = ({ isEn }) => {
@@ -408,8 +409,14 @@ const Dashboard = ({ lang }) => {
           teamQuery = teamQuery.eq('organization_id', userProfile.organization_id);
         }
         const { data: teamData, error: teamError } = await teamQuery;
-        if (teamError) console.error("Team Fetch Error:", teamError.message);
-        else if (teamData) setTeamMembers(teamData);
+        
+        if (teamError) {
+          console.error("Team Fetch Error:", teamError.message);
+        } else if (teamData) {
+          // STRICT GLOBAL FILTER: Remove any ghost records without an email
+          const cleanTeam = teamData.filter(member => member.email && member.email.trim() !== '');
+          setTeamMembers(cleanTeam);
+        }
       }
 
     } catch (err) {
