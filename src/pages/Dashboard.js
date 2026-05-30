@@ -3,6 +3,7 @@
  * @description Root container for the CiviWatch Operations Center.
  * FEATURE: Context-Aware Help Modal. The Help icon dynamically swaps its content 
  * (explanations and interactive simulators) based on the currently active tab.
+ * UPDATED: Integrated the OnboardingWelcome interceptor for new operators.
  */
 import React, { useEffect, useState, useCallback } from 'react';
 import { supabase } from '../supabaseClient';
@@ -19,6 +20,7 @@ import CiviHQ from '../components/dashboard/CiviHQ';
 import SettingsTab from '../components/dashboard/SettingsTab';
 import SubmitReportsTab from '../components/dashboard/SubmitReportsTab';
 import ReportsTab from '../components/dashboard/ReportsTab';
+import OnboardingWelcome from '../components/dashboard/OnboardingWelcome'; // New Import
 
 // --- INTERACTIVE ROLE SIMULATOR COMPONENT (For Workspace Help) ---
 const RoleSimulator = ({ isEn }) => {
@@ -447,7 +449,6 @@ const Dashboard = ({ lang }) => {
     if (!session) return navigate('/login');
 
     const email = session.user.email;
-    const displayName = session.user.user_metadata?.full_name || email.split('@')[0];
     
     try {
       let { data: profile, error } = await supabase
@@ -468,7 +469,7 @@ const Dashboard = ({ lang }) => {
         const newProfile = {
           user_id: session.user.id,
           email: email,
-          display_name: displayName,
+          display_name: null, // DELIBERATELY NULL SO THE WELCOME TRAP CATCHES THEM
           role: 'Operator L1', 
           organization_id: orgData ? orgData.id : null, 
           current_sampling_rate: 100 
@@ -487,15 +488,13 @@ const Dashboard = ({ lang }) => {
         throw error; 
       }
 
-      profile.email = profile.email || email;
-      profile.display_name = profile.display_name || displayName;
-
-      try {
-        await supabase
-          .from('user_profiles')
-          .update({ email: email, display_name: displayName })
-          .eq('id', profile.id);
-      } catch(e) {}
+      // ENSURE EMAIL EXISTS IN DB WITHOUT OVERWRITING BLANK DISPLAY NAMES
+      if (!profile.email) {
+        try {
+          await supabase.from('user_profiles').update({ email: email }).eq('id', profile.id);
+          profile.email = email;
+        } catch(e) {}
+      }
 
       setUserProfile({ ...profile, displayName: profile.display_name });
       
@@ -691,6 +690,16 @@ const Dashboard = ({ lang }) => {
 
   if (!userProfile) return <div style={{ color: '#fff', textAlign: 'center', paddingTop: '150px' }}>{isEn ? 'Loading Workspace...' : 'טוען סביבת עבודה...'}</div>;
 
+  // ============================================================================
+  // THE NEW ONBOARDING TRAP (Catch blank names or "Pending Invite")
+  // ============================================================================
+  const needsOnboarding = !userProfile.display_name || userProfile.display_name.trim() === '' || userProfile.display_name === 'Pending Invite';
+
+  if (needsOnboarding) {
+    return <OnboardingWelcome currentUserProfile={userProfile} isEn={isEn} refreshProfile={loadProfile} />;
+  }
+  // ============================================================================
+
   const isSuperUser = ['admin', 'super admin', 'system admin', 'global admin'].includes(userProfile.role?.toLowerCase()?.trim());
   const roleDisplay = isSuperUser ? 'Super Admin' : userProfile.role;
   const orgNameDisplay = isSuperUser ? 'Global Command' : (userProfile.organizations?.name || 'CiviWatch AI');
@@ -825,7 +834,7 @@ const Dashboard = ({ lang }) => {
                 </button>
 
                 <div style={{ textAlign: isEn || isMobile ? 'left' : 'right', backgroundColor: 'rgba(15, 23, 42, 0.6)', padding: '10px 20px', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.1)', backdropFilter: 'blur(4px)' }}>
-                  <strong style={{ color: '#38bdf8' }}>{userProfile.displayName}</strong>
+                  <strong style={{ color: '#38bdf8' }}>{userProfile.displayName || userProfile.display_name}</strong>
                   <span style={{ margin: '0 10px', color: '#475569' }}>|</span>
                   <span style={{ fontSize: '13px', color: '#cbd5e1' }}>{roleDisplay}</span>
                 </div>
