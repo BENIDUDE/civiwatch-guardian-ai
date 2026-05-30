@@ -609,6 +609,6 @@ const TeamManager = ({ teamMembers, currentUserProfile, isEn, triggerToast, refr
       )}
     </div>
   );
-};
+}; 
 
-export default TeamManager;
+export default TeamManager; 
