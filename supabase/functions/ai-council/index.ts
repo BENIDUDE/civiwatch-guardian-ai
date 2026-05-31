@@ -1,3 +1,4 @@
+// deno-lint-ignore-file no-explicit-any no-import-prefix no-unused-vars
 /**
  * @file index.ts (Edge Function: ai-council)
  * @description The Server-Side Intelligence Engine & AI Consensus Orchestrator.
@@ -16,7 +17,7 @@ const extractJSON = (text: string) => {
     if (typeof text === 'object' && text !== null) return text;
     const match = text?.match(/\{[\s\S]*\}/);
     return match ? JSON.parse(match[0]) : JSON.parse(text);
-  } catch (e) {
+  } catch (_e) {
     throw new Error("Failed to parse JSON from AI response.");
   }
 };
@@ -176,7 +177,7 @@ serve(async (req) => {
             const base64Str = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
             const mimeType = imgRes.headers.get('content-type') || 'image/jpeg';
             base64Image = `data:${mimeType};base64,${base64Str}`;
-        } catch (e) {
+        } catch (_e) {
             console.warn("Failed to fetch image for AI Analysis, proceeding with text only.");
         }
     }
@@ -246,9 +247,9 @@ serve(async (req) => {
     }
 
     // --- TAG EVALUATION (Using Dynamic Thresholds) ---
-    let verifiedTags: string[] = [];
-    let rejectedTags: string[] = [];
-    let combinedReasoning: string[] = [];
+    const verifiedTags: string[] = [];
+    const rejectedTags: string[] = [];
+    const combinedReasoning: string[] = [];
     let highestVerifiedConfidence = 0;
 
     for (const tag of tagsToVerify) {
@@ -303,7 +304,7 @@ serve(async (req) => {
       overall_status: finalStatus === 'AI Verified' ? 'Report Actionable' : finalStatus === 'AI Rejected' ? 'Report Rejected' : 'Escalated: Ambiguous Consensus',
       validated_tags: verifiedTags, rejected_tags: rejectedTags,
       provider_results: successfulVotes.map(v => ({ name: v.providerName, model: v.modelUsed, reasoning: v.reasoning, scope: "In Scope" })),
-      tag_consensus: tagsToVerify.map(tag => {
+      tag_consensus: tagsToVerify.map((tag: string) => {
         const matches = successfulVotes.filter((v: any) => v.evaluations.find((e: any) => e.tag?.toLowerCase().trim() === tag.toLowerCase().trim() && (e.is_match === true || String(e.is_match).toLowerCase() === 'true'))).length;
         return { tag, ratio: `${matches}/${successfulVotes.length}`, status: verifiedTags.includes(tag) ? 'Verified' : (rejectedTags.includes(tag) ? 'Rejected' : 'Ambiguous') };
       }),

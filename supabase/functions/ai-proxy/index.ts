@@ -1,3 +1,4 @@
+// deno-lint-ignore-file no-explicit-any no-import-prefix no-unused-vars
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 
 const corsHeaders = {
@@ -16,7 +17,7 @@ async function safeFetchWithRetry(url: string, options: any, providerName: strin
     let data;
     try {
       data = JSON.parse(text);
-    } catch (err) {
+    } catch (_err) {
       if (text.trim().toLowerCase().startsWith("<!doctype") || text.toLowerCase().includes("<html")) {
         if (attempt <= maxRetries) {
           console.warn(`[${providerName}] Received HTML instead of JSON. Waking up model. Retrying in ${waitTimeMs/1000} seconds...`);
@@ -56,8 +57,6 @@ serve(async (req) => {
   }
 
   // --- ADDED SECURITY CHECK FOR SERVER-TO-SERVER AUTH ---
-  // This allows the ai-council to bypass the strict Supabase API Gateway 
-  // while ensuring the proxy still blocks unauthorized public internet traffic.
   const authHeader = req.headers.get('authorization');
   if (!authHeader) {
     return new Response(
@@ -198,7 +197,7 @@ serve(async (req) => {
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 }
     )
 
-  } catch (error) {
+  } catch (error: any) {
     return new Response(
       JSON.stringify({ error: error.message }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 }
