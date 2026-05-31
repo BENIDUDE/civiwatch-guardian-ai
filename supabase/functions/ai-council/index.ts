@@ -1,4 +1,4 @@
-// deno-lint-ignore-file no-explicit-any no-import-prefix no-unused-vars
+// deno-lint-ignore-file no-explicit-any no-import-prefix
 /**
  * @file index.ts (Edge Function: ai-council)
  * @description The Server-Side Intelligence Engine & AI Consensus Orchestrator.
@@ -49,7 +49,6 @@ const getVotePrompt = (report: any) => `
   }
 `;
 
-// Map UI JSON keys to the backend ai_providers table 'provider_type' values
 const PROVIDER_MAPPING: Record<string, string> = {
   'github_gpt4o': 'github',
   'groq_llama3': 'groq',
@@ -60,7 +59,6 @@ const PROVIDER_MAPPING: Record<string, string> = {
 const getThresholds = (category: string, providerCount: number, customThresholds: Record<string, number>) => {
   const cat = (category || 'default').toLowerCase().trim();
   
-  // Hardcoded safety rules for severe threats (These remain fixed)
   const baseRules: Record<string, any> = {
     'terrorism':          { requiresUnanimity: true,  minVotesRatio: 0.6 },
     'incitement':         { requiresUnanimity: true,  minVotesRatio: 0.6 },
@@ -70,7 +68,6 @@ const getThresholds = (category: string, providerCount: number, customThresholds
   
   const rule = baseRules[cat] || baseRules['default'];
 
-  // DYNAMIC THRESHOLD INJECTION (Converts UI 75% to 0.75)
   let uiThreshold = 70; 
   const thresholdKey = Object.keys(customThresholds).find(k => k.toLowerCase().trim() === cat);
   
@@ -96,7 +93,6 @@ serve(async (req) => {
 
     console.log(`[AI Council] Analyzing Report ID: ${report.id}`);
 
-    // --- FETCH ORG SETTINGS (Sampling & AI Orchestration) ---
     let samplingRate = 0;
     let qaStrategy = 'global'; 
     let appliedStrategyLog = '';
@@ -116,7 +112,6 @@ serve(async (req) => {
        }
     }
 
-    // --- ENFORCE QA SAMPLING STRATEGY ---
     if (qaStrategy.includes('operator') || qaStrategy.includes('per')) {
         if (report.submitted_by) {
             const { data: user, error: userError } = await supabaseAdmin
@@ -137,7 +132,6 @@ serve(async (req) => {
     }
     console.log(`[AI Council] ${appliedStrategyLog}`);
 
-    // --- ENFORCE AI ORCHESTRATION (Active Models) ---
     const { data: globalProviders, error: providerError } = await supabaseAdmin
       .from('ai_providers')
       .select('*')
@@ -148,26 +142,20 @@ serve(async (req) => {
     }
 
     let activeProviders = globalProviders;
-    let customThresholds: Record<string, number> = {};
+    const customThresholds: Record<string, number> = aiSettings?.thresholds || {};
 
-    if (aiSettings) {
-        customThresholds = aiSettings.thresholds || {};
-        
-        // Map UI toggles to backend provider types
-        if (aiSettings.active_models) {
-            const allowedProviderTypes = Object.entries(aiSettings.active_models)
-                .filter(([_, isActive]) => isActive)
-                .map(([key, _]) => PROVIDER_MAPPING[key]);
+    if (aiSettings?.active_models) {
+        const allowedProviderTypes = Object.entries(aiSettings.active_models)
+            .filter(([_, isActive]) => isActive)
+            .map(([key, _]) => PROVIDER_MAPPING[key]);
 
-            if (allowedProviderTypes.length > 0) {
-                activeProviders = globalProviders.filter(p => allowedProviderTypes.includes(p.provider_type.toLowerCase()));
-            }
+        if (allowedProviderTypes.length > 0) {
+            activeProviders = globalProviders.filter(p => allowedProviderTypes.includes(p.provider_type.toLowerCase()));
         }
     }
 
     console.log(`[AI Council] Active Models routed for request: ${activeProviders.map(p => p.name).join(', ')}`);
 
-    // --- PREPARE IMAGE ---
     let base64Image = null;
     const imageUrl = report.evidence_url || report.image_url;
     if (imageUrl) {
@@ -184,7 +172,6 @@ serve(async (req) => {
 
     const tagsToVerify = (report.tags && report.tags.length > 0) ? report.tags : [report.category || 'default'];
     
-    // --- FIRE PROXY REQUESTS ---
     const votePromises = activeProviders.map(async (provider) => {
       try {
         const prompt = getVotePrompt(report);
@@ -209,7 +196,6 @@ serve(async (req) => {
     const successfulVotes = results.filter(r => r.success && typeof r.is_in_scope !== 'undefined' && Array.isArray(r.evaluations));
     const failedCount = results.length - successfulVotes.length;
 
-    // --- EMERGENCY ABORT SEQUENCE ---
     if (successfulVotes.length === 0) {
       const errorMetadata = {
         overall_status: 'System Failure: All Providers Offline',
@@ -229,7 +215,6 @@ serve(async (req) => {
       return new Response(JSON.stringify({ message: "All providers failed." }), { status: 200 });
     }
 
-    // --- SCOPE GATEKEEPER ---
     const inScopeVotes = successfulVotes.filter(v => String(v.is_in_scope).toLowerCase() === 'true').length;
     if ((successfulVotes.length - inScopeVotes) > successfulVotes.length / 2) {
       let finalReasoning = `[SYSTEM OVERRIDE: Report Dismissed - Majority AI consensus determined this content is out of scope.]\n`;
@@ -246,7 +231,6 @@ serve(async (req) => {
       return new Response(JSON.stringify({ message: "Out of scope." }), { status: 200 });
     }
 
-    // --- TAG EVALUATION (Using Dynamic Thresholds) ---
     const verifiedTags: string[] = [];
     const rejectedTags: string[] = [];
     const combinedReasoning: string[] = [];
@@ -311,7 +295,6 @@ serve(async (req) => {
       failures: failedCount, survivor_mode: failedCount > 0, routing_note: ""
     };
 
-    // --- CORE ROUTING ---
     const updatePayload: any = { ai_vote_status: finalStatus, ai_confidence: highestVerifiedConfidence };
 
     if (finalStatus === 'AI Verified' || finalStatus === 'AI Rejected') {

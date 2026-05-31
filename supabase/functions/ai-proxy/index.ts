@@ -1,4 +1,4 @@
-// deno-lint-ignore-file no-explicit-any no-import-prefix no-unused-vars
+// deno-lint-ignore-file no-explicit-any no-import-prefix
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 
 const corsHeaders = {
@@ -78,7 +78,7 @@ serve(async (req) => {
       { type: "image_url", image_url: { url: base64Image } }
     ] : prompt;
 
-    let geminiParts: any[] = [{ text: prompt }];
+    const geminiParts: any[] = [{ text: prompt }]; // Fixed let to const
     if (hasImage) {
       const mimeMatch = base64Image.match(/^data:(image\/\w+);base64,(.+)$/);
       const mimeType = mimeMatch ? mimeMatch[1] : "image/jpeg";

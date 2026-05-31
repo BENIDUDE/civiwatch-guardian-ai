@@ -1,3 +1,4 @@
+// deno-lint-ignore-file no-import-prefix
 /**
  * @file supabase/functions/invite-user/index.ts
  * @description Securely invites a new user to the CiviWatch platform via Supabase Auth.
