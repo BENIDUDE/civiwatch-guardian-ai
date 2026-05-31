@@ -2,7 +2,7 @@
  * @file index.ts (Edge Function: ai-council)
  * @description The Server-Side Intelligence Engine & AI Consensus Orchestrator.
  * FIX: Now respects the Organization's "Sampling Enforcement Strategy". 
- * Explicitly branches logic between Global (Org-Wide) vs Per-Operator overrides.
+ * FIX: Now dynamically routes models and sets thresholds based on organizations.ai_settings JSONB.
  */
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.38.4'
@@ -48,18 +48,40 @@ const getVotePrompt = (report: any) => `
   }
 `;
 
-const getThresholds = (category: string, providerCount: number) => {
+// Map UI JSON keys to the backend ai_providers table 'provider_type' values
+const PROVIDER_MAPPING: Record<string, string> = {
+  'github_gpt4o': 'github',
+  'groq_llama3': 'groq',
+  'openrouter_llama3': 'openrouter',
+  'gemini_15_flash': 'gemini'
+};
+
+const getThresholds = (category: string, providerCount: number, customThresholds: Record<string, number>) => {
   const cat = (category || 'default').toLowerCase().trim();
-  const configs: Record<string, any> = {
-    'terrorism':          { minConfidence: 0.95, requiresUnanimity: true,  minVotesRatio: 0.6 },
-    'incitement':         { minConfidence: 0.90, requiresUnanimity: true,  minVotesRatio: 0.6 },
-    'violence / cruelty': { minConfidence: 0.90, requiresUnanimity: true,  minVotesRatio: 0.6 },
-    'antisemitism':       { minConfidence: 0.80, requiresUnanimity: false, minVotesRatio: 0.5 },
-    'hate speech':        { minConfidence: 0.80, requiresUnanimity: false, minVotesRatio: 0.5 },
-    'default':            { minConfidence: 0.70, requiresUnanimity: false, minVotesRatio: 0.5 }
+  
+  // Hardcoded safety rules for severe threats (These remain fixed)
+  const baseRules: Record<string, any> = {
+    'terrorism':          { requiresUnanimity: true,  minVotesRatio: 0.6 },
+    'incitement':         { requiresUnanimity: true,  minVotesRatio: 0.6 },
+    'violence / cruelty': { requiresUnanimity: true,  minVotesRatio: 0.6 },
+    'default':            { requiresUnanimity: false, minVotesRatio: 0.5 }
   };
-  const rule = configs[cat] || configs['default'];
-  return { ...rule, requiredVotes: Math.max(1, Math.ceil(providerCount * rule.minVotesRatio)) };
+  
+  const rule = baseRules[cat] || baseRules['default'];
+
+  // DYNAMIC THRESHOLD INJECTION (Converts UI 75% to 0.75)
+  let uiThreshold = 70; 
+  const thresholdKey = Object.keys(customThresholds).find(k => k.toLowerCase().trim() === cat);
+  
+  if (thresholdKey !== undefined) {
+      uiThreshold = customThresholds[thresholdKey];
+  } else if (customThresholds['Default']) {
+      uiThreshold = customThresholds['Default'];
+  }
+  
+  const minConfidence = uiThreshold / 100;
+
+  return { ...rule, minConfidence, requiredVotes: Math.max(1, Math.ceil(providerCount * rule.minVotesRatio)) };
 };
 
 serve(async (req) => {
@@ -73,26 +95,27 @@ serve(async (req) => {
 
     console.log(`[AI Council] Analyzing Report ID: ${report.id}`);
 
-    // --- FETCH QA SAMPLING RATE & STRATEGY ---
+    // --- FETCH ORG SETTINGS (Sampling & AI Orchestration) ---
     let samplingRate = 0;
     let qaStrategy = 'global'; 
     let appliedStrategyLog = '';
+    let aiSettings: any = null;
 
-    // 1. Fetch Organization Baseline & Enforcement Strategy
     if (report.organization_id) {
        const { data: org, error: orgError } = await supabaseAdmin
          .from('organizations')
-         .select('default_sampling, default_sampling_rate, qa_strategy') 
+         .select('default_sampling, default_sampling_rate, qa_strategy, ai_settings') 
          .eq('id', report.organization_id)
          .single();
        
        if (!orgError && org) {
-          samplingRate = Number(org.default_sampling_rate ?? org.default_sampling ?? 0);
-          qaStrategy = (org.qa_strategy || 'global').toLowerCase();
+         samplingRate = Number(org.default_sampling_rate ?? org.default_sampling ?? 0);
+         qaStrategy = (org.qa_strategy || 'global').toLowerCase();
+         aiSettings = org.ai_settings;
        }
     }
 
-    // 2. Branch Logic based on Strategy
+    // --- ENFORCE QA SAMPLING STRATEGY ---
     if (qaStrategy.includes('operator') || qaStrategy.includes('per')) {
         if (report.submitted_by) {
             const { data: user, error: userError } = await supabaseAdmin
@@ -104,26 +127,46 @@ serve(async (req) => {
             if (!userError && user && user.current_sampling_rate !== null && user.current_sampling_rate !== undefined) {
                 samplingRate = Number(user.current_sampling_rate);
                 appliedStrategyLog = `Per-Operator Strategy Enforced: Using Override Rate (${samplingRate}%)`;
-                console.log(`[AI Council] ${appliedStrategyLog}`);
             } else {
                 appliedStrategyLog = `Per-Operator Strategy Enforced: No override found, fell back to baseline (${samplingRate}%)`;
-                console.log(`[AI Council] ${appliedStrategyLog}`);
             }
         }
     } else {
         appliedStrategyLog = `Global Strategy Enforced: Using Org Baseline (${samplingRate}%)`;
-        console.log(`[AI Council] ${appliedStrategyLog}`);
     }
+    console.log(`[AI Council] ${appliedStrategyLog}`);
 
-    const { data: providers, error: providerError } = await supabaseAdmin
+    // --- ENFORCE AI ORCHESTRATION (Active Models) ---
+    const { data: globalProviders, error: providerError } = await supabaseAdmin
       .from('ai_providers')
       .select('*')
       .eq('is_active', true);
 
-    if (providerError || !providers || providers.length === 0) {
-      throw new Error("No active AI providers configured.");
+    if (providerError || !globalProviders || globalProviders.length === 0) {
+      throw new Error("No global AI providers configured.");
     }
 
+    let activeProviders = globalProviders;
+    let customThresholds: Record<string, number> = {};
+
+    if (aiSettings) {
+        customThresholds = aiSettings.thresholds || {};
+        
+        // Map UI toggles to backend provider types
+        if (aiSettings.active_models) {
+            const allowedProviderTypes = Object.entries(aiSettings.active_models)
+                .filter(([_, isActive]) => isActive)
+                .map(([key, _]) => PROVIDER_MAPPING[key]);
+
+            if (allowedProviderTypes.length > 0) {
+                activeProviders = globalProviders.filter(p => allowedProviderTypes.includes(p.provider_type.toLowerCase()));
+            }
+        }
+    }
+
+    console.log(`[AI Council] Active Models routed for request: ${activeProviders.map(p => p.name).join(', ')}`);
+
+    // --- PREPARE IMAGE ---
     let base64Image = null;
     const imageUrl = report.evidence_url || report.image_url;
     if (imageUrl) {
@@ -140,7 +183,8 @@ serve(async (req) => {
 
     const tagsToVerify = (report.tags && report.tags.length > 0) ? report.tags : [report.category || 'default'];
     
-    const votePromises = providers.map(async (provider) => {
+    // --- FIRE PROXY REQUESTS ---
+    const votePromises = activeProviders.map(async (provider) => {
       try {
         const prompt = getVotePrompt(report);
         const { data, error } = await supabaseAdmin.functions.invoke('ai-proxy', {
@@ -201,14 +245,14 @@ serve(async (req) => {
       return new Response(JSON.stringify({ message: "Out of scope." }), { status: 200 });
     }
 
-    // --- TAG EVALUATION ---
+    // --- TAG EVALUATION (Using Dynamic Thresholds) ---
     let verifiedTags: string[] = [];
     let rejectedTags: string[] = [];
     let combinedReasoning: string[] = [];
     let highestVerifiedConfidence = 0;
 
     for (const tag of tagsToVerify) {
-      const rules = getThresholds(tag, successfulVotes.length);
+      const rules = getThresholds(tag, successfulVotes.length, customThresholds);
       const matchVotes: number[] = [];
       const rejectVotes: number[] = [];
 
@@ -229,12 +273,12 @@ serve(async (req) => {
       } else if (matchCount >= rules.requiredVotes && avgMatchConf >= rules.minConfidence) {
          verifiedTags.push(tag);
          if (avgMatchConf > highestVerifiedConfidence) highestVerifiedConfidence = avgMatchConf;
-         combinedReasoning.push(`[SYSTEM: Tag '${tag}' Verified - Consensus (${matchCount}/${successfulVotes.length}) at ${(avgMatchConf*100).toFixed(0)}%.]`);
+         combinedReasoning.push(`[SYSTEM: Tag '${tag}' Verified - Consensus (${matchCount}/${successfulVotes.length}) at ${(avgMatchConf*100).toFixed(0)}%. (Req: ${(rules.minConfidence*100).toFixed(0)}%)]`);
       } else if (rejectVotes.length >= rules.requiredVotes) {
          rejectedTags.push(tag);
          combinedReasoning.push(`[SYSTEM: Tag '${tag}' Rejected - Majority determined no violation.]`);
       } else {
-         combinedReasoning.push(`[SYSTEM: Tag '${tag}' Ambiguous - No consensus reached.]`);
+         combinedReasoning.push(`[SYSTEM: Tag '${tag}' Ambiguous - Consensus Failed (Match: ${(avgMatchConf*100).toFixed(0)}% | Req: ${(rules.minConfidence*100).toFixed(0)}%).]`);
       }
     }
 
@@ -253,7 +297,7 @@ serve(async (req) => {
     }
 
     let finalReasoningString = combinedReasoning.join('\n');
-    if (failedCount > 0) finalReasoningString += `\n*(Note: ${failedCount} provider(s) failed).*`;
+    if (failedCount > 0) finalReasoningString += `\n*(Note: ${failedCount} provider(s) failed or were disabled via orchestration).*`;
 
     const auditMetadata: any = {
       overall_status: finalStatus === 'AI Verified' ? 'Report Actionable' : finalStatus === 'AI Rejected' ? 'Report Rejected' : 'Escalated: Ambiguous Consensus',
@@ -272,7 +316,7 @@ serve(async (req) => {
     if (finalStatus === 'AI Verified' || finalStatus === 'AI Rejected') {
       const roll = Math.random() * 100;
       if (roll <= samplingRate) {
-        updatePayload.status = 'Pending Review'; // Force to QA
+        updatePayload.status = 'Pending Review'; 
         finalReasoningString = `[QA SAMPLE: ${appliedStrategyLog}]\n` + finalReasoningString;
         auditMetadata.routing_note = appliedStrategyLog;
       } else {
