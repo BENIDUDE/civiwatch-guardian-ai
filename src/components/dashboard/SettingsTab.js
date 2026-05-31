@@ -1,15 +1,15 @@
 /**
  * @file SettingsTab.js
- * @description The Settings hub for the dashboard.
- * Acts as a router for Team Management, SOP Manager (Operation Guides), QA, Billing, and an AI Orchestration gateway.
+ * @description The main shell navigation container for the Settings layout workspace.
+ * Acts as a layout manager for Team Management, SOP Manager (Operation Guides), QA, Billing, and AI Orchestration.
  * ENFORCES RBAC: Admins see all tabs. Moderators only see Team and Guides.
  */
 import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../../supabaseClient';
-import { useNavigate } from 'react-router-dom';
 import DynamicQAConfig from './DynamicQAConfig';
 import Billing from './Billing';
 import TeamManager from './TeamManager';
+import AiOrchestration from './AiOrchestration';
 
 const Icons = {
   Users: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>,
@@ -18,8 +18,7 @@ const Icons = {
   Book: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>,
   Trash: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>,
   Link: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg>,
-  Cpu: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="4" y="4" width="16" height="16" rx="2" ry="2"></rect><rect x="9" y="9" width="6" height="6"></rect><line x1="9" y1="1" x2="9" y2="4"></line><line x1="15" y1="1" x2="15" y2="4"></line><line x1="9" y1="20" x2="9" y2="23"></line><line x1="15" y1="20" x2="15" y2="23"></line><line x1="20" y1="9" x2="23" y2="9"></line><line x1="20" y1="14" x2="23" y2="14"></line><line x1="1" y1="9" x2="4" y2="9"></line><line x1="1" y1="14" x2="4" y2="14"></line></svg>,
-  ExternalLink: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
+  Cpu: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="4" y="4" width="16" height="16" rx="2" ry="2"></rect><rect x="9" y="9" width="6" height="6"></rect><line x1="9" y1="1" x2="9" y2="4"></line><line x1="15" y1="1" x2="15" y2="4"></line><line x1="9" y1="20" x2="9" y2="23"></line><line x1="15" y1="20" x2="15" y2="23"></line><line x1="20" y1="9" x2="23" y2="9"></line><line x1="20" y1="14" x2="23" y2="14"></line><line x1="1" y1="9" x2="4" y2="9"></line><line x1="1" y1="14" x2="4" y2="14"></line></svg>
 };
 
 const PLATFORMS = ['X (Twitter)', 'Facebook', 'Instagram', 'TikTok', 'Telegram', 'YouTube', 'LinkedIn', 'Discord', 'Truth Social', 'VK', 'Other'];
@@ -29,21 +28,15 @@ const inputStyle = { width: '100%', backgroundColor: '#0f172a', border: '1px sol
 
 const SettingsTab = ({ teamMembers, currentUserProfile, isEn, triggerToast, refreshData }) => {
   const isRtl = !isEn;
-  const navigate = useNavigate();
   
-  // --- RBAC LOGIC ---
   const userRole = currentUserProfile?.role?.toLowerCase()?.trim() || '';
   const canSeeAdminTabs = ['ngo admin', 'admin', 'super admin', 'global admin'].includes(userRole);
   
-  // Tab State
   const [activeTab, setActiveTab] = useState('team');
-
-  // --- GUIDELINES STATE (SOP) ---
   const [guidelines, setGuidelines] = useState([]);
   const [newGuide, setNewGuide] = useState({ network: '', category: '', drive_link: '' });
   const [isGuidesLoading, setIsGuidesLoading] = useState(false);
 
-  // --- USECALLBACK FOR FETCHING DATA ---
   const fetchGuidelines = useCallback(async () => {
     try {
       const { data, error } = await supabase.from('platform_guidelines').select('*').order('network', { ascending: true });
@@ -54,7 +47,6 @@ const SettingsTab = ({ teamMembers, currentUserProfile, isEn, triggerToast, refr
     }
   }, []);
 
-  // --- GUIDES LOGIC EFFECT ---
   useEffect(() => {
     if (activeTab === 'guides') {
       fetchGuidelines();
@@ -112,7 +104,7 @@ const SettingsTab = ({ teamMembers, currentUserProfile, isEn, triggerToast, refr
   return (
     <div style={{ animation: 'fadeIn 0.4s ease-out', direction: isRtl ? 'rtl' : 'ltr' }}>
       
-      {/* --- SUB-NAVIGATION --- */}
+      {/* --- SUB-NAVIGATION TAB BAR --- */}
       <div style={{ display: 'flex', gap: '15px', borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: '15px', marginBottom: '25px', flexWrap: 'wrap' }}>
         
         <button 
@@ -153,7 +145,7 @@ const SettingsTab = ({ teamMembers, currentUserProfile, isEn, triggerToast, refr
         )}
       </div>
 
-      {/* --- TAB CONTENT --- */}
+      {/* --- RENDER TARGET VIEWS --- */}
       
       {activeTab === 'team' && (
         <div style={{ animation: 'fadeIn 0.4s ease-out' }}>
@@ -169,7 +161,6 @@ const SettingsTab = ({ teamMembers, currentUserProfile, isEn, triggerToast, refr
 
       {activeTab === 'guides' && (
         <div style={{ backgroundColor: 'rgba(15, 23, 42, 0.6)', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.05)', padding: '30px', maxWidth: '1000px', animation: 'fadeIn 0.4s ease-out' }}>
-          
           <h2 style={{ color: '#fff', margin: '0 0 10px 0', fontSize: '1.5rem', display: 'flex', alignItems: 'center', gap: '10px' }}>
             {Icons.Book} {isEn ? 'Task Operation Guides (SOPs)' : 'מדריכי משימות (SOPs)'}
           </h2>
@@ -180,7 +171,6 @@ const SettingsTab = ({ teamMembers, currentUserProfile, isEn, triggerToast, refr
           </p>
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '15px', backgroundColor: '#020617', padding: '20px', borderRadius: '12px', border: '1px solid #334155', marginBottom: '40px' }}>
-            
             <div>
               <label style={{ display: 'block', color: '#cbd5e1', fontSize: '0.85rem', fontWeight: 'bold', marginBottom: '8px' }}>{isEn ? 'Platform (Network)' : 'פלטפורמה (רשת)'}</label>
               <select value={newGuide.network} onChange={(e) => setNewGuide({...newGuide, network: e.target.value})} style={inputStyle}>
@@ -236,7 +226,7 @@ const SettingsTab = ({ teamMembers, currentUserProfile, isEn, triggerToast, refr
                       </span>
                       <h4 style={{ color: '#fff', margin: '10px 0 0 0', fontSize: '1.1rem' }}>{guide.category}</h4>
                     </div>
-                    <button onClick={() => handleDeleteGuideline(guide.id)} style={{ background: 'transparent', border: 'none', color: '#ef4444', cursor: 'pointer', padding: '4px', opacity: 0.7, transition: 'opacity 0.2s' }} onMouseEnter={(e) => e.target.style.opacity = 1} onMouseLeave={(e) => e.target.style.opacity = 0.7} title={isEn ? "Delete" : "מחק"}>
+                    <button onClick={() => handleDeleteGuideline(guide.id)} style={{ background: 'transparent', border: 'none', color: '#ef4444', cursor: 'pointer', padding: '4px', opacity: 0.7, transition: 'opacity 0.2s' }}>
                       {Icons.Trash}
                     </button>
                   </div>
@@ -250,27 +240,13 @@ const SettingsTab = ({ teamMembers, currentUserProfile, isEn, triggerToast, refr
         </div>
       )}
 
-      {/* --- AI ORCHESTRATION GATEWAY --- */}
+      {/* --- STANDALONE AI ORCHESTRATION VIEW INJECTION --- */}
       {activeTab === 'ai' && canSeeAdminTabs && (
-        <div style={{ backgroundColor: 'rgba(168, 85, 247, 0.05)', borderRadius: '16px', border: '1px solid rgba(168, 85, 247, 0.25)', padding: '40px', maxWidth: '800px', animation: 'fadeIn 0.4s ease-out', textAlign: 'center' }}>
-          <div style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '60px', height: '60px', backgroundColor: 'rgba(168, 85, 247, 0.12)', borderRadius: '50%', marginBottom: '20px', color: '#a855f7' }}>
-            {Icons.Cpu}
-          </div>
-          <h2 style={{ color: '#fff', margin: '0 0 15px 0', fontSize: '1.75rem' }}>
-            {isEn ? 'AI Orchestration Engine' : 'מנוע ניהול AI'}
-          </h2>
-          <p style={{ color: '#cbd5e1', margin: '0 auto 30px auto', lineHeight: '1.6', fontSize: '1.05rem', maxWidth: '650px' }}>
-            {isEn 
-              ? 'Due to the complexity of the consensus verification systems and real-time confidence layers, algorithmic modeling settings are configured within a dedicated environment.' 
-              : 'עקב מורכבות מערכות האימות והקונצנזוס הדינמיות, קביעת ספי המודלים האלגוריתמיים מבוצעת כעת בסביבת ניהול ייעודית.'}
-          </p>
-          <button 
-            onClick={() => navigate('/ai-orchestration')}
-            style={{ backgroundColor: '#a855f7', color: '#fff', border: 'none', padding: '14px 28px', borderRadius: '8px', fontWeight: 'bold', fontSize: '1.1rem', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '10px', transition: 'all 0.2s', boxShadow: '0 4px 15px rgba(168, 85, 247, 0.3)' }}
-          >
-            {isEn ? 'Launch Command Center' : 'הפעל מרכז בקרה'} {Icons.ExternalLink}
-          </button>
-        </div>
+        <AiOrchestration 
+          currentUserProfile={currentUserProfile} 
+          isEn={isEn} 
+          triggerToast={triggerToast} 
+        />
       )}
 
       {activeTab === 'qa' && canSeeAdminTabs && (
